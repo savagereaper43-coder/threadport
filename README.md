@@ -1,6 +1,6 @@
 # ThreadPort
 
-ThreadPort is being built to turn clothing photos into Roblox Classic Clothing. Stage 1 gives you a blank template to preview and download.
+ThreadPort is being built to turn clothing photos into Roblox Classic Clothing. Auto Bash now prepares photos by removing the background and guessing the clothing and photo types.
 
 ## Run locally
 
@@ -23,26 +23,45 @@ python3 -m venv .venv
 .venv/bin/python -m uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-`GET /health` checks whether the API is running. `GET /template-layout` returns the same classic shirt and pants layout that the preview reads from `shared/templateLayout.json`.
+The Vite development server forwards `/api` to port 8000. To use a different backend address, set `THREADPORT_API_URL` when starting Vite. `GET /health` checks the API, and `GET /template-layout` returns the shared classic-clothing region rectangles.
 
 ## What works now
 
-- Switch between Auto Bash and Studio. Studio has an editable name for the current session. My Projects shows a placeholder.
-- Pick Shirt, Pants, or T-Shirt. Turn on **Show regions** to see the template faces. Right and left refer to the Roblox avatar's sides.
-- Select **Download PNG** to save a transparent sRGB image. Shirts and pants export at 585 × 559 pixels. T-shirts export at 512 × 512 pixels. Region guides appear only in the preview.
+- In **Auto Bash**, browse, drop, or paste a main photo. You can also add one back photo and up to three angles. The uploader accepts JPG, PNG, and WebP images up to 10 MB and 20 megapixels each.
+- Choose **Auto** for a template suggestion or select **Shirt**, **Pants**, or **T-Shirt** yourself. Watch the server report progress, then preview each transparent cutout and its clothing and photo type guesses.
+- In **Studio**, preview or download a blank template. Shirts and pants export at 585 × 559 pixels. T-shirts export at 512 × 512 pixels. **Show regions** adds guides to the preview, and left and right refer to the avatar's sides.
 
-The rectangles match the coordinates in `AGENTS.md` and the face sizes in the Roblox Creator Hub guide. Direct comparison with Roblox's downloadable artwork is pending because the cloud environment could not retrieve the template archive. [Roblox Classic Clothing guide](https://create.roblox.com/docs/avatar/classic-clothing)
+Photo classification is based on the visible shape and framing. A clear photo of one whole item against a plain background gives the best cutout. Busy backgrounds and photos with several garments can leave extra material or lead to a wrong guess.
+
+The classic rectangles match the coordinates in `AGENTS.md` and the face sizes in the Roblox Creator Hub guide. Direct comparison with Roblox's downloadable artwork is pending because the cloud environment could not retrieve the template archive. [Roblox Classic Clothing guide](https://create.roblox.com/docs/avatar/classic-clothing)
+
+### Optional clothing model
+
+The default setup runs OpenCV GrabCut locally with no model download. To try the CPU clothing model, install rembg and set a writable model cache directory. On the first request, rembg downloads and verifies about 176 MB of weights. The API uses GrabCut when the model is unavailable or can't produce a usable mask.
+
+```sh
+.venv/bin/python -m pip install -r backend/requirements-model.txt
+THREADPORT_REMBG=1 U2NET_HOME=/tmp/threadport-models OMP_NUM_THREADS=2 \
+  .venv/bin/python -m uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### Processing API
+
+`POST /process` accepts multipart form data with a required `front` file, an optional `back` file, up to three repeated `angles` files, and a `mode` value of `auto`, `shirt`, `pants`, or `t-shirt`. The response is newline-delimited JSON. It streams `progress` events, a `photo` event with a base64 PNG and classification data for each input, and a final `result` event. Photo errors that occur after streaming begins arrive as an `error` event.
 
 ## Run the tests
 
+Install the frontend and backend dependencies from the setup above, then run these commands from the repository root.
+
 ```sh
 npx playwright install chromium
+.venv/bin/python -m unittest backend.test_photos
 npm test
 npm run build
 ```
 
-With Chromium already installed, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to its path and run `npm test`. The tests start their own frontend server and check the 18 exact rectangles, right/left placement, PNG downloads, and the shell on desktop and a narrow phone.
+With Chromium already installed, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to its path when running `npm test`. Playwright starts its own frontend on port 4173 and API on port 8001. The backend tests check cutouts and classifications using the repository sample photos. Browser tests cover the upload and processing flow, cancellation, and the Stage 1 template tools.
 
 ## Next
 
-Stage 2 adds photo upload, background removal, and live processing progress.
+Stage 3 cuts out garment parts and places them on a Roblox template.

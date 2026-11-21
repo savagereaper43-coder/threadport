@@ -21,6 +21,7 @@ test('switches modes, edits the Studio title and opens the projects placeholder'
 
 test('the hidden guides use the avatar’s right and left in both classic layouts', async ({ page }) => {
   await page.goto('/')
+  await page.getByRole('button', { name: 'Studio', exact: true }).click()
   const toggle = page.getByRole('checkbox', { name: 'Show regions' })
   await expect(toggle).not.toBeChecked()
   await expect(page.getByTitle('Right arm front')).toHaveCount(0)
@@ -47,6 +48,7 @@ for (const template of [
 ]) {
   test(`downloads a transparent ${template.label} PNG at its native dimensions with guides on`, async ({ page }) => {
     await page.goto('/')
+  await page.getByRole('button', { name: 'Studio', exact: true }).click()
     await page.getByText(template.label, { exact: true }).click()
     await page.getByRole('checkbox', { name: 'Show regions' }).check()
     const downloadEvent = page.waitForEvent('download')
@@ -78,6 +80,7 @@ for (const template of [
 
 test('the export keeps artwork at its original coordinates and clears unused pixels', async ({ page }) => {
   await page.goto('/')
+  await page.getByRole('button', { name: 'Studio', exact: true }).click()
   const result = await page.evaluate(async () => {
     const modulePath = '/src/template.ts'
     const { exportTemplatePng } = await import(modulePath) as typeof import('../src/template')
@@ -111,6 +114,7 @@ test('the export keeps artwork at its original coordinates and clears unused pix
 test('the shell fits a narrow phone without horizontal scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 720 })
   await page.goto('/')
+  await page.getByRole('button', { name: 'Studio', exact: true }).click()
   await expect(page.getByRole('button', { name: 'My Projects' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Download PNG' })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320)

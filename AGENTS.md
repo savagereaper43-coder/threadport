@@ -393,7 +393,7 @@ A full photobash editor. It should feel like a simple, black-themed Photopea/Pho
 
 ## Progress
 (Codex: update this after every task.)
-- [ ] Stage 1
+- [x] Stage 1 — Monorepo, black UI shell, shared template layout, hidden region guides, and exact-size PNG export. Browser tests and API smoke checks passed. Direct pixel comparison against the official Roblox artwork is pending because the template download was blocked.
 - [ ] Stage 2
 - [ ] Stage 3
 - [ ] Stage 4

@@ -1,0 +1,20 @@
+[
+  { "part": "torso", "face": "up", "x": 231, "y": 8, "w": 128, "h": 64 },
+  { "part": "torso", "face": "right", "x": 165, "y": 74, "w": 64, "h": 128 },
+  { "part": "torso", "face": "front", "x": 231, "y": 74, "w": 128, "h": 128 },
+  { "part": "torso", "face": "left", "x": 361, "y": 74, "w": 64, "h": 128 },
+  { "part": "torso", "face": "back", "x": 427, "y": 74, "w": 128, "h": 128 },
+  { "part": "torso", "face": "down", "x": 231, "y": 204, "w": 128, "h": 64 },
+  { "part": "rightLimb", "face": "up", "x": 217, "y": 289, "w": 64, "h": 64 },
+  { "part": "rightLimb", "face": "left", "x": 19, "y": 355, "w": 64, "h": 128 },
+  { "part": "rightLimb", "face": "back", "x": 85, "y": 355, "w": 64, "h": 128 },
+  { "part": "rightLimb", "face": "right", "x": 151, "y": 355, "w": 64, "h": 128 },
+  { "part": "rightLimb", "face": "front", "x": 217, "y": 355, "w": 64, "h": 128 },
+  { "part": "rightLimb", "face": "down", "x": 217, "y": 485, "w": 64, "h": 64 },
+  { "part": "leftLimb", "face": "up", "x": 308, "y": 289, "w": 64, "h": 64 },
+  { "part": "leftLimb", "face": "front", "x": 308, "y": 355, "w": 64, "h": 128 },
+  { "part": "leftLimb", "face": "left", "x": 374, "y": 355, "w": 64, "h": 128 },
+  { "part": "leftLimb", "face": "back", "x": 440, "y": 355, "w": 64, "h": 128 },
+  { "part": "leftLimb", "face": "right", "x": 506, "y": 355, "w": 64, "h": 128 },
+  { "part": "leftLimb", "face": "down", "x": 308, "y": 485, "w": 64, "h": 64 }
+]

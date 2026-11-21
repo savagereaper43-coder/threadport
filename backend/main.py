@@ -1,11 +1,14 @@
-"""ThreadPort's foundation API."""
+"""ThreadPort's API."""
 
 import json
 from pathlib import Path
 
 from fastapi import FastAPI
 
+from .processing import router as processing_router
+
 app = FastAPI(title="ThreadPort")
+app.include_router(processing_router)
 layout_path = Path(__file__).resolve().parents[1] / "shared" / "templateLayout.json"
 template_layout = json.loads(layout_path.read_text(encoding="utf-8"))
 

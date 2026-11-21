@@ -1,6 +1,7 @@
 import { Download, Folder, Grid2X2, Shirt } from 'lucide-react'
 import { motion, useReducedMotion } from 'motion/react'
 import { useState } from 'react'
+import { AutoBash } from './AutoBash'
 import { exportTemplatePng, regionLabel, templates } from './template'
 import type { TemplateKind } from './template'
 
@@ -122,20 +123,27 @@ function TemplateWorkspace() {
 export function App() {
   const [view, setView] = useState<View>('Auto Bash')
   const [projectName, setProjectName] = useState('Untitled project')
+  const [processing, setProcessing] = useState(false)
   const reduceMotion = useReducedMotion()
+
+  function switchView(next: View) {
+    if (next === view) return
+    setProcessing(false)
+    setView(next)
+  }
 
   return (
     <>
       <header className="top-bar">
         <div className="top-bar-inner">
-          <button className="wordmark" type="button" onClick={() => setView('Auto Bash')}>
+          <button className="wordmark" type="button" onClick={() => switchView('Auto Bash')}>
             ThreadPort
           </button>
           <div className="top-bar-center">
             {view === 'Auto Bash' && (
               <ol className="steps" aria-label="Auto Bash progress">
                 {steps.map((step, index) => (
-                  <li key={step} aria-current={index === 0 ? 'step' : undefined}>
+                  <li key={step} aria-current={index === (processing ? 1 : 0) ? 'step' : undefined}>
                     {index > 0 && <span aria-hidden="true">·</span>}
                     {step}
                   </li>
@@ -162,7 +170,7 @@ export function App() {
                   type="button"
                   key={mode}
                   aria-pressed={view === mode}
-                  onClick={() => setView(mode)}
+                  onClick={() => switchView(mode)}
                 >
                   {mode}
                 </button>
@@ -173,7 +181,7 @@ export function App() {
               type="button"
               aria-label="My Projects"
               aria-pressed={view === 'My Projects'}
-              onClick={() => setView('My Projects')}
+              onClick={() => switchView('My Projects')}
             >
               <Folder size={16} aria-hidden="true" />
               <span>My Projects</span>
@@ -189,13 +197,16 @@ export function App() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: reduceMotion ? 0 : 0.2, ease: 'easeOut' }}
       >
-        <div className="page-heading">
-          <h1>{view}</h1>
-          {view === 'Auto Bash' && <p>Photo upload is coming next. For now, explore the Roblox clothing template.</p>}
-          {view === 'Studio' && <p>Start with a blank template. Editing tools will come in a later stage.</p>}
-          {view === 'My Projects' && <p>Saved projects will appear here once project saving is available.</p>}
-        </div>
-        {view !== 'My Projects' && <TemplateWorkspace />}
+        {view === 'Auto Bash' ? <AutoBash onProcessingChange={setProcessing} /> : (
+          <>
+            <div className="page-heading">
+              <h1>{view}</h1>
+              {view === 'Studio' && <p>Start with a blank template. Editing tools will come in a later stage.</p>}
+              {view === 'My Projects' && <p>Saved projects will appear here once project saving is available.</p>}
+            </div>
+            {view === 'Studio' && <TemplateWorkspace />}
+          </>
+        )}
       </motion.main>
     </>
   )

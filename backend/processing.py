@@ -95,19 +95,23 @@ async def process_events(mode: str, photos: list[tuple[str, bytes]]) -> AsyncIte
         for index, (role, image) in enumerate(inspected):
             png, details = await run_in_threadpool(prepare_cutout, *image, mode)
             if role in ("front", "back"):
-                source_photos[role] = (png, details["mode"], details["garment_type"])
+                source_photos[role] = (png, details)
             yield event("photo", role=role, png=base64.b64encode(png).decode("ascii"), **details)
             yield event("progress", step="removing", percent=20 + 40 * (index + 1) // len(inspected))
 
         yield event("progress", step="cutting", percent=60)
-        png, template_mode, garment = source_photos["front"]
-        front = await run_in_threadpool(segment_parts, png, template_mode, garment)
+        png, details = source_photos["front"]
+        template_mode = details["mode"]
+        front = await run_in_threadpool(
+            segment_parts, png, template_mode, details["garment_type"], photo_type=details["photo_type"]
+        )
         back = None
         if template_mode != "t-shirt" and "back" in source_photos:
-            png, _, garment = source_photos["back"]
+            png, details = source_photos["back"]
             try:
                 back = await run_in_threadpool(
-                    segment_parts, png, template_mode, garment, back=True, profile=front.profile
+                    segment_parts, png, template_mode, details["garment_type"], back=True,
+                    profile=front.profile, photo_type=details["photo_type"]
                 )
             except PhotoError:
                 pass  # An unreadable back silhouette should not discard the front template.

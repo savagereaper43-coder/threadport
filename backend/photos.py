@@ -108,6 +108,25 @@ def largest_component(mask: np.ndarray) -> np.ndarray:
     return labels == foreground
 
 
+def dark_fabric(gray: np.ndarray, edge: int) -> np.ndarray | None:
+    """Find a cohesive dark flat-lay against a substantially lighter border."""
+    height, width = gray.shape
+    border = np.concatenate((gray[:edge].ravel(), gray[-edge:].ravel(),
+                             gray[:, :edge].ravel(), gray[:, -edge:].ravel()))
+    backdrop = np.percentile(border, 35)
+    subject = np.percentile(gray[height // 4:3 * height // 4, width // 3:2 * width // 3], 30)
+    if subject > 72 or backdrop - subject < 52:
+        return None
+    mask = largest_component(gray < subject + (backdrop - subject) * 0.56)
+    if not 0.12 < mask.mean() < 0.88 or np.mean(mask[:, (0, -1)]) > 0.12:
+        return None
+    # Flood from the image edge to retain light lettering enclosed by the garment.
+    exterior = (~mask).astype(np.uint8)
+    _, labels = cv2.connectedComponents(exterior, connectivity=4)
+    outside = np.unique(np.concatenate((labels[0], labels[-1], labels[:, 0], labels[:, -1])))
+    return ~np.isin(labels, outside[outside != 0])
+
+
 def grabcut_mask(rgb: np.ndarray, face: Face | None, worn: bool) -> np.ndarray:
     height, width = rgb.shape[:2]
     edge = max(2, min(height, width) // 40)
@@ -120,6 +139,7 @@ def grabcut_mask(rgb: np.ndarray, face: Face | None, worn: bool) -> np.ndarray:
     threshold = max(13, min(30, np.percentile(border, 65) * 1.35))
 
     possible = distance > threshold
+    dark = None
     center = np.zeros((height, width), dtype=bool)
     center[height // 6: 5 * height // 6, width // 5: 4 * width // 5] = True
     core = cv2.erode((possible & center).astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
@@ -133,6 +153,12 @@ def grabcut_mask(rgb: np.ndarray, face: Face | None, worn: bool) -> np.ndarray:
         edge_labels = np.unique(np.concatenate((matches[0], matches[-1], matches[:, 0], matches[:, -1])))
         initial[np.isin(matches, edge_labels[edge_labels != 0])] = cv2.GC_BGD
         initial[largest_component(core) & (distance > threshold * 1.2)] = cv2.GC_FGD
+        dark = dark_fabric(lab[:, :, 0], edge)
+        if dark is not None:
+            # Teach GrabCut about the sleeves and hem outside its center seed.
+            kernel = np.ones((5, 5), np.uint8)
+            interior = cv2.erode(dark.astype(np.uint8), kernel).astype(bool)
+            initial[interior] = cv2.GC_FGD
     elif face is not None:
         x, y, w, h = face
         # The visible face anchors the person and keeps distant scenery out of the cutout.
@@ -162,6 +188,19 @@ def grabcut_mask(rgb: np.ndarray, face: Face | None, worn: bool) -> np.ndarray:
     labels = np.pad(initial, edge, constant_values=cv2.GC_BGD)
     cv2.grabCut(padded, labels, None, np.zeros((1, 65)), np.zeros((1, 65)), 2, cv2.GC_INIT_WITH_MASK)
     foreground = largest_component(labels[edge:-edge, edge:-edge] % 2)
+    if dark is not None:
+        foreground &= cv2.dilate(dark.astype(np.uint8), np.ones((3, 3), np.uint8)).astype(bool)
+    if not worn and face is None and foreground.any():
+        lightness = lab[:, :, 0]
+        surface = np.percentile(lightness[foreground], 90)
+        if surface < 170:
+            # A light object touching the photograph's border is not fabric
+            # when the garment itself is much darker. Keep interior graphics.
+            glints = foreground & (lightness > max(190, surface + 54))
+            _, components = cv2.connectedComponents(glints.astype(np.uint8), connectivity=4)
+            boundary = np.concatenate((components[:2].ravel(), components[-2:].ravel(),
+                                       components[:, :2].ravel(), components[:, -2:].ravel()))
+            foreground &= ~np.isin(components, np.unique(boundary[boundary != 0]))
     return foreground.astype(np.uint8) * 255
 
 

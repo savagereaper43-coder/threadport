@@ -9,47 +9,45 @@ from PIL import Image
 
 from .photos import PhotoError, largest_component
 
-TEXTURE_SIZE = 512
 MIN_PANEL_PIXELS = 10
+
+
+@dataclass(frozen=True)
+class Piece:
+    mask: np.ndarray
+    axis: tuple[float, float] = (0, 1)
+
+    def axes(self) -> np.ndarray:
+        axis = np.asarray(self.axis, dtype=np.float64)
+        axis /= np.linalg.norm(axis)
+        return np.array([[axis[1], -axis[0]], axis])
+
+    def bounds(self) -> tuple[np.ndarray, np.ndarray]:
+        ys, xs = np.nonzero(self.mask)
+        center = self.axes() @ np.stack((xs, ys))
+        return center.min(axis=1), center.max(axis=1)
 
 
 @dataclass
 class GarmentParts:
     profile: str
-    textures: dict[str, Image.Image]
+    photo: np.ndarray
+    body: tuple[float, int, float, int]
+    pieces: dict[str, Piece]
 
 
 def silhouette(png: bytes) -> tuple[np.ndarray, np.ndarray]:
     with Image.open(BytesIO(png)) as photo:
-        rgba = np.array(photo.convert("RGBA"), dtype=np.float32)
+        rgba = np.array(photo.convert("RGBA"))
     mask = largest_component(rgba[:, :, 3] >= 192)
-    # Remove thin background fringes without throwing away the garment outline.
     mask = cv2.erode(mask.astype(np.uint8), np.ones((3, 3), np.uint8)).astype(bool)
-    rgba[:, :, 3] *= mask
-    rgba[:, :, :3] *= rgba[:, :, 3:4] / 255
+    rgba[~mask] = 0
+    rgba[:, :, 3][mask] = 255
     ys, xs = np.nonzero(mask)
     if len(ys) == 0 or min(np.ptp(ys), np.ptp(xs)) < MIN_PANEL_PIXELS * 2:
         raise PhotoError("Use a photo with the whole garment in frame so we can find its parts.")
     crop = np.s_[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
     return rgba[crop], mask[crop]
-
-
-def straight_alpha(warped: np.ndarray) -> Image.Image:
-    alpha = warped[:, :, 3:4]
-    np.divide(warped[:, :, :3] * 255, alpha, out=warped[:, :, :3], where=alpha > 0)
-    return Image.fromarray(np.clip(warped.round(), 0, 255).astype(np.uint8))
-
-
-def flat_panel(rgba: np.ndarray, top: int, bottom: int, upper: tuple[float, float],
-               lower: tuple[float, float]) -> Image.Image:
-    """Use the shoulder/waist and hem corners to undo the panel's perspective."""
-    if bottom - top < MIN_PANEL_PIXELS or min(upper[1] - upper[0], lower[1] - lower[0]) < MIN_PANEL_PIXELS:
-        raise PhotoError("Lay the garment flat and keep the whole item in frame.")
-    source = np.float32([[upper[0], top], [upper[1], top], [lower[1], bottom], [lower[0], bottom]])
-    end = TEXTURE_SIZE - 1
-    target = np.float32([[0, 0], [end, 0], [end, end], [0, end]])
-    transform = cv2.getPerspectiveTransform(source, target)
-    return straight_alpha(cv2.warpPerspective(rgba, transform, (TEXTURE_SIZE, TEXTURE_SIZE)))
 
 
 def profile_rows(mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -75,47 +73,15 @@ def span(left: np.ndarray, right: np.ndarray, start: int, end: int) -> tuple[flo
     return float(np.nanmedian(left[start:end])), float(np.nanmedian(right[start:end]))
 
 
-def panel_limits(x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Find the edges of each mesh row perpendicular to the limb centerline."""
-    bins = np.rint(y - y.min()).astype(np.int32)
-    rows = np.arange(bins.max() + 1)
-    low = np.full(len(rows), np.inf)
-    high = np.full(len(rows), -np.inf)
-    np.minimum.at(low, bins, x)
-    np.maximum.at(high, bins, x)
-    width = high - low
-    valid = width >= max(3, np.percentile(width[np.isfinite(width)], 75) * 0.42)
-    if valid.sum() < MIN_PANEL_PIXELS:
-        raise PhotoError("Spread the sleeves or legs out so we can see both edges.")
-    rows = rows[valid]
-    bounds = np.stack((low[valid], high[valid])).astype(np.float32)
-    # Subpixel smoothing removes staircase jumps between neighboring silhouette rows.
-    bounds = cv2.GaussianBlur(bounds, (7, 1), 1.5)
-    return rows + y.min(), bounds[0], bounds[1]
-
-
-def ribbon(rgba: np.ndarray, mask: np.ndarray, direction: tuple[float, float] = (0, 1),
-           *, cuff_inset: float = 0) -> Image.Image:
-    """Straighten an angled or curved sleeve/leg with a silhouette-fitted strip mesh."""
+def leg_piece(mask: np.ndarray) -> Piece:
     ys, xs = np.nonzero(mask)
-    if len(xs) < MIN_PANEL_PIXELS ** 2:
-        raise PhotoError("We couldn't see a complete sleeve or leg. Lay it flat and try again.")
-    axis = np.array(direction, dtype=np.float32)
-    axis /= np.linalg.norm(axis)
-    across = np.array([axis[1], -axis[0]], dtype=np.float32)
-    longitudinal = xs * axis[0] + ys * axis[1]
-    transverse = xs * across[0] + ys * across[1]
-    rows, left, right = panel_limits(transverse, longitudinal)
-    along = np.linspace(rows[0] + 1, rows[-1] - max(1, (rows[-1] - rows[0]) * cuff_inset), TEXTURE_SIZE)
-    # Keep samples just inside the visible fabric, especially on angled edges.
-    inset = np.minimum(2.5, (right - left) * 0.09)
-    lo = np.interp(along, rows, left + inset)
-    hi = np.interp(along, rows, right - inset)
-    mesh_x = lo[:, None] + (hi - lo)[:, None] * np.linspace(0, 1, TEXTURE_SIZE)
-    mesh_y = along[:, None]
-    map_x = np.float32(mesh_x * across[0] + mesh_y * axis[0])
-    map_y = np.float32(mesh_x * across[1] + mesh_y * axis[1])
-    return straight_alpha(cv2.remap(rgba, map_x, map_y, cv2.INTER_LINEAR))
+    if len(ys) < MIN_PANEL_PIXELS ** 2:
+        raise PhotoError("Spread the pants flat so both legs are visible.")
+    start, end = np.percentile(ys, (10, 90))
+    top = xs[ys <= start]
+    cuff = xs[ys >= end]
+    axis = float(np.median(cuff) - np.median(top)), max(1., float(end - start))
+    return Piece(mask, axis)
 
 
 def paired_legs(mask: np.ndarray) -> tuple[int, int]:
@@ -143,7 +109,7 @@ def paired_legs(mask: np.ndarray) -> tuple[int, int]:
     return int(starts[0]), split
 
 
-def bottom_parts(rgba: np.ndarray, mask: np.ndarray, profile: str, back: bool) -> GarmentParts:
+def bottom_parts(rgba: np.ndarray, mask: np.ndarray, profile: str, back: bool, worn: bool) -> GarmentParts:
     height, width = mask.shape
     crotch, split = paired_legs(mask)
     left, right = profile_rows(mask)
@@ -151,25 +117,52 @@ def bottom_parts(rgba: np.ndarray, mask: np.ndarray, profile: str, back: bool) -
     if len(waist) == 0:
         raise PhotoError("Keep the waistband and both legs in frame.")
     top = int(waist[0]) + 1
+    if worn:
+        # A whole-body photo can start at the shoulders. Use the crotch and
+        # leg length to isolate the approximate waist above them.
+        top = max(top, crotch - round((height - crotch) * 0.49))
     hem = crotch - max(2, height // 85)
     top_edges = span(left, right, top, min(hem, top + 5))
     hem_edges = span(left, right, max(top, hem - 4), hem + 1)
-    torso = flat_panel(rgba, top, hem, (top_edges[0] + 2, top_edges[1] - 2),
-                       (hem_edges[0] + 2, hem_edges[1] - 2))
+    body = (min(top_edges[0], hem_edges[0]), top, max(top_edges[1], hem_edges[1]), hem)
     limbs = []
     for side in (slice(None, split), slice(split, None)):
         piece = np.zeros_like(mask)
         piece[hem:, side] = mask[hem:, side]
-        limbs.append(ribbon(rgba, piece))
+        limbs.append(leg_piece(largest_component(piece)))
     if back:
         limbs.reverse()
-    return GarmentParts(profile, dict(zip(("torso", "rightLimb", "leftLimb"), [torso, *limbs])))
+    return GarmentParts(profile, rgba, body, dict(zip(("rightLimb", "leftLimb"), limbs)))
+
+
+def distinguish_sleeve(rgba: np.ndarray, sleeve: np.ndarray, screen_left: bool) -> np.ndarray:
+    """Use a distinct sleeve color to exclude visible chest fabric."""
+    ys, xs = np.nonzero(sleeve)
+    lo, hi = np.percentile(xs, (25, 75))
+    outside = xs <= lo if screen_left else xs >= hi
+    hsv = cv2.cvtColor(rgba[:, :, :3], cv2.COLOR_RGB2HSV)
+    hue, saturation, light = cv2.split(hsv)
+    vivid = (saturation >= 90) & (light >= 60)
+    swatch = hue[ys, xs][outside & vivid[ys, xs]]
+    if len(swatch) < outside.sum() * 0.29:
+        return sleeve
+    key = int(np.bincount(swatch, minlength=180).argmax())
+    difference = np.abs(hue.astype(int) - key)
+    nearby = (np.minimum(difference, 180 - difference) <= 12) & vivid
+    if nearby[ys, xs][outside].mean() < 0.29:
+        return sleeve
+    height, width = sleeve.shape
+    if nearby[:height // 2, width * 2 // 5:width * 3 // 5].mean() > 0.18:
+        return sleeve
+    connected = cv2.morphologyEx((sleeve & nearby).astype(np.uint8), cv2.MORPH_CLOSE,
+                                np.ones((7, 7), np.uint8)).astype(bool)
+    trimmed = largest_component(connected & sleeve)
+    return trimmed if trimmed.sum() >= max(100, sleeve.sum() * 0.18) else sleeve
 
 
 def top_parts(rgba: np.ndarray, mask: np.ndarray, profile: str | None, back: bool,
               flat_tshirt: bool) -> GarmentParts:
     height, width = mask.shape
-    left, right = profile_rows(mask)
     body_left, body_right = body_rows(mask)
     waist_l, waist_r = span(body_left, body_right, height * 53 // 100, height * 76 // 100)
     hem_l, hem_r = span(body_left, body_right, height * 87 // 100, height * 96 // 100)
@@ -195,14 +188,10 @@ def top_parts(rgba: np.ndarray, mask: np.ndarray, profile: str | None, back: boo
     long = all(piece[height * 60 // 100:height * 82 // 100].sum() > torso_width * height * 0.022
                for piece in sleeve_masks)
     profile = profile or ("hoodie" if hooded else "long_sleeve" if long else "t_shirt")
-    top_l, top_r = span(left, right, shoulder, min(shoulder + 5, hem))
-    # The upper corners follow the shoulder line. The hem stays level in the texture.
-    upper = (max(waist_l, top_l) + 2, min(waist_r, top_r) - 2)
-    lower = (hem_l + 3, hem_r - 3)
-    torso = flat_panel(rgba, shoulder + max(2, height // 48), hem, upper, lower)
-    textures = {"torso": torso}
+    body = (min(waist_l, hem_l), shoulder, max(waist_r, hem_r), hem)
+    pieces: dict[str, Piece] = {}
     if flat_tshirt:
-        return GarmentParts(profile, textures)
+        return GarmentParts(profile, rgba, body, pieces)
 
     for index, piece in enumerate(sleeve_masks):
         outer_edge = side_l - torso_width * 0.045 if index == 0 else side_r + torso_width * 0.045
@@ -219,21 +208,17 @@ def top_parts(rgba: np.ndarray, mask: np.ndarray, profile: str | None, back: boo
         sleeve = largest_component(piece & (grid_y < limit))
         if sleeve.sum() >= MIN_PANEL_PIXELS ** 2:
             part = "rightLimb" if (index == 0) != back else "leftLimb"
-            cuff_inset = 0.045 if long else 0.12
-            textures[part] = ribbon(rgba, sleeve, axis, cuff_inset=cuff_inset)
+            pieces[part] = Piece(distinguish_sleeve(rgba, sleeve, index == 0), axis)
 
     if profile == "hoodie" and hooded:
-        hood = mask & (grid_y < shoulder)
-        try:
-            textures["hood"] = ribbon(rgba, hood)
-        except PhotoError:
-            pass
-    return GarmentParts(profile, textures)
+        pieces["hood"] = Piece(mask & (grid_y < shoulder))
+    return GarmentParts(profile, rgba, body, pieces)
 
 
 def segment_parts(png: bytes, mode: str, garment_type: str, *, back: bool = False,
-                  profile: str | None = None) -> GarmentParts:
+                  profile: str | None = None, photo_type: str | None = None) -> GarmentParts:
     rgba, mask = silhouette(png)
     if mode == "pants":
-        return bottom_parts(rgba, mask, profile or ("shorts" if garment_type == "shorts" else "pants"), back)
+        return bottom_parts(rgba, mask, profile or ("shorts" if garment_type == "shorts" else "pants"),
+                            back, worn=photo_type == "worn")
     return top_parts(rgba, mask, profile, back, flat_tshirt=mode == "t-shirt")

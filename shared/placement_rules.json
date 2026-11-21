@@ -1,48 +1,25 @@
 {
-  "faces": {
-    "front": "front",
-    "right": "right_edge",
-    "left": "left_edge",
-    "back": "back",
-    "up": "top_edge",
-    "down": "bottom_edge"
-  },
   "profiles": {
     "t_shirt": {
       "mode": "shirt",
-      "limb_height": 0.40,
-      "side_strip": 0.09,
-      "top_strip": 0.10,
-      "bottom_strip": 0.09
+      "limb_height": 0.4
     },
     "long_sleeve": {
       "mode": "shirt",
-      "limb_height": 1,
-      "side_strip": 0.20,
-      "top_strip": 0.10,
-      "bottom_strip": 0.08
+      "limb_height": 1
     },
     "hoodie": {
       "mode": "shirt",
       "limb_height": 1,
-      "side_strip": 0.20,
-      "top_strip": 0.12,
-      "bottom_strip": 0.13,
-      "torso_faces": { "up": "hood" }
+      "hood_on_top": true
     },
     "pants": {
       "mode": "pants",
-      "limb_height": 1,
-      "side_strip": 0.19,
-      "top_strip": 0.12,
-      "bottom_strip": 0.10
+      "limb_height": 1
     },
     "shorts": {
       "mode": "pants",
-      "limb_height": 0.50,
-      "side_strip": 0.18,
-      "top_strip": 0.12,
-      "bottom_strip": 0.10
+      "limb_height": 0.5
     }
   }
 }

@@ -30,12 +30,12 @@ The Vite development server forwards `/api` to port 8000. To use a different bac
 - In **Auto Bash**, browse, drop, or paste a main photo. You can also add one back photo and up to three angles. The uploader accepts JPG, PNG, and WebP images up to 10 MB and 20 megapixels each.
 - Choose **Auto** for a template suggestion or select **Shirt**, **Pants**, or **T-Shirt** yourself. The processing checklist updates while the server removes the background, cuts out the parts, and places them.
 - The **Result** screen shows the template next to your photo. Use **Photo preview** to inspect the cutouts and **Show regions** to check where the parts landed. Classic templates use a 585 × 559 canvas. T-shirt graphics use a 512 × 512 canvas.
-- Placement profiles cover short-sleeve tops, long-sleeve tops, hoodies, pants, and shorts. A usable back photo supplies the rear faces. Otherwise, the rear faces stay transparent. The extra angles are available for cutout preview.
+- Placement profiles cover short-sleeve tops, long-sleeve tops, hoodies, pants, and shorts. A usable back photo supplies the rear faces. Without one, the torso back stays transparent. Arm and leg backs use cloth copied from the matching photographed sleeve or leg. The extra angles are available for cutout preview.
 - In **Studio**, preview or download a blank template. Shirts and pants export at 585 × 559 pixels. T-shirts export at 512 × 512 pixels. **Show regions** adds guides to the preview, and left and right refer to the avatar's sides.
 
-For the cleanest placement, photograph one whole garment straight-on against a plain background and spread the sleeves or legs so their edges are visible. Worn photos can include other clothing or skin in the cutouts. Side faces use strips from the photographed fabric, and the template can still have unfinished seams and unfilled areas.
+For the cleanest placement, photograph one whole garment straight-on against a plain background and spread the sleeves or legs so their edges are visible. Worn photos can include other clothing or skin in the cutouts. One cutout layer spans the torso front and sides. Missing fabric on a covered face is filled with copies of real cloth from the same garment. The torso and a full-length limb can use different uniform scale factors so the waist fills its face and the leg retains its full length. Every piece for a given wrap keeps its scale in both directions. Visible repeats can remain on faces without a direct view.
 
-The classic rectangles match the coordinates in `AGENTS.md` and the face sizes in the Roblox Creator Hub guide. Direct comparison with Roblox's downloadable artwork is pending because the cloud environment could not retrieve the template archive. [Roblox Classic Clothing guide](https://create.roblox.com/docs/avatar/classic-clothing)
+The classic rectangles match the coordinates in `AGENTS.md` and the face sizes in the Roblox Creator Hub guide. All 18 rectangles also match the supplied official shirt and pants JPEGs after registration. These files are enlarged and cropped, so the test checks the relative bounds and face order alongside the exact 585 × 559 layout test. [Roblox Classic Clothing guide](https://create.roblox.com/docs/avatar/classic-clothing)
 
 ### Optional clothing model
 
@@ -57,7 +57,7 @@ Install the frontend and backend dependencies from the setup above, then run the
 
 ```sh
 npx playwright install chromium
-.venv/bin/python -m unittest backend.test_photos backend.test_placement
+.venv/bin/python -m unittest backend.test_photos backend.test_placement backend.test_template_references
 npm test
 npm run build
 ```
@@ -67,10 +67,10 @@ With Chromium already installed, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to its pat
 Rebuild the review PNGs through the same placement pipeline as Auto Bash.
 
 ```sh
-.venv/bin/python -m backend.run_samples
+.venv/bin/python -m backend.run_samples --review
 ```
 
-See the PNGs and scores in the [visual review](samples/out/report.md).
+The review command saves the original template PNGs and enlarged checkerboard copies. See both in the [visual review](samples/out/report.md).
 
 ## Next
 

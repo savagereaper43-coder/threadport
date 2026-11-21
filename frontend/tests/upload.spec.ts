@@ -22,7 +22,7 @@ test('places a main and back photo on a template and keeps the angle cutout avai
   await expect(page.getByRole('list', { name: 'Auto Bash progress' }).locator('[aria-current=step]')).toHaveText(/Result/)
   const template = page.getByRole('img', { name: 'Generated Shirt template' })
   await expect(template).toBeVisible()
-  await expect(page.getByText('The back uses your back photo.')).toBeVisible()
+  await expect(page.getByText('The torso back uses your back photo.')).toBeVisible()
   await expect(page.getByText('585 × 559 px')).toBeVisible()
   // Inspect the rendered canvas so an empty or miswired preview fails.
   const canvas = template.locator('canvas')
@@ -149,6 +149,6 @@ test('a single flat-lay photo produces a pants preview on a narrow screen', asyn
   await page.locator('.drop-zone input[type=file]').setInputFiles(pants)
   await page.getByRole('button', { name: 'Make my Roblox clothing' }).click()
   await expect(page.getByRole('img', { name: 'Generated Pants template' })).toBeVisible()
-  await expect(page.getByText('The back is empty. Add a clear back photo to place fabric there.')).toBeVisible()
+  await expect(page.getByText('Add a back photo to fill the torso back. The arms or legs wrap using fabric from your photo.')).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(375)
 })

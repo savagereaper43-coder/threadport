@@ -134,8 +134,8 @@ export default function TemplateResult({ original, result, onBack }: {
           {template.mode !== 't-shirt' && (
             <p className="result-note">
               {template.has_back
-                ? 'The back uses your back photo.'
-                : 'The back is empty. Add a clear back photo to place fabric there.'}
+                ? 'The torso back uses your back photo.'
+                : 'Add a back photo to fill the torso back. The arms or legs wrap using fabric from your photo.'}
             </p>
           )}
           <label className="guide-control">

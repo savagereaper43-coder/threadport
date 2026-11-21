@@ -395,7 +395,7 @@ A full photobash editor. It should feel like a simple, black-themed Photopea/Pho
 (Codex: update this after every task.)
 - [x] Stage 1 — Monorepo, black UI shell, shared template layout, hidden region guides, and exact-size PNG export. Browser tests and API smoke checks passed. Direct pixel comparison against the official Roblox artwork is pending because the template download was blocked.
 - [x] Stage 2 — Photo upload, live progress, cutout previews, and clothing and photo type guesses. GrabCut works without a model, and rembg can be enabled for clothing segmentation. Busy backgrounds and photos with several garments can still leave unwanted material. Template placement starts in Stage 3.
-- [ ] Stage 3
+- [ ] Stage 3 — Parts, unwarping, placement profiles, and the Result preview are implemented. Both flat-lays were rendered and reviewed. The quality gate is open because unphotographed backs and seam continuity remain incomplete, worn examples score below the threshold, and the sample set contains four of the 30 required real photos. See `samples/out/report.md`.
 - [ ] Stage 4
 - [ ] Stage 5
 - [ ] Stage 6

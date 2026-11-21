@@ -12,6 +12,8 @@ from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 from starlette.formparsers import MultiPartException, MultiPartParser
 
+from .garment_parts import segment_parts
+from .placement import place_template
 from .photos import PhotoError, decode_photo, find_face, prepare_cutout, work_photo
 
 MAX_FILE_BYTES = 10 * 1024 * 1024
@@ -89,12 +91,35 @@ async def process_events(mode: str, photos: list[tuple[str, bytes]]) -> AsyncIte
             yield event("progress", step="finding", percent=20 * (index + 1) // len(photos))
 
         yield event("progress", step="removing", percent=20)
+        source_photos = {}
         for index, (role, image) in enumerate(inspected):
             png, details = await run_in_threadpool(prepare_cutout, *image, mode)
+            if role in ("front", "back"):
+                source_photos[role] = (png, details["mode"], details["garment_type"])
             yield event("photo", role=role, png=base64.b64encode(png).decode("ascii"), **details)
-            yield event("progress", step="removing", percent=20 + 79 * (index + 1) // len(inspected))
+            yield event("progress", step="removing", percent=20 + 40 * (index + 1) // len(inspected))
 
-        yield event("result", percent=100)
+        yield event("progress", step="cutting", percent=60)
+        png, template_mode, garment = source_photos["front"]
+        front = await run_in_threadpool(segment_parts, png, template_mode, garment)
+        back = None
+        if template_mode != "t-shirt" and "back" in source_photos:
+            png, _, garment = source_photos["back"]
+            try:
+                back = await run_in_threadpool(
+                    segment_parts, png, template_mode, garment, back=True, profile=front.profile
+                )
+            except PhotoError:
+                pass  # An unreadable back silhouette should not discard the front template.
+
+        yield event("progress", step="placing", percent=85)
+        template = await run_in_threadpool(place_template, template_mode, front, back)
+        yield event("result", percent=100, template={
+            "png": base64.b64encode(template).decode("ascii"),
+            "mode": template_mode,
+            "profile": front.profile,
+            "has_back": back is not None,
+        })
     except PhotoError as error:
         yield event("error", message=str(error))
     except Exception:

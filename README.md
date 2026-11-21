@@ -1,6 +1,6 @@
 # ThreadPort
 
-ThreadPort is being built to turn clothing photos into Roblox Classic Clothing. Auto Bash now prepares photos by removing the background and guessing the clothing and photo types.
+ThreadPort is being built to turn clothing photos into Roblox Classic Clothing. Auto Bash now removes the background, finds clothing parts, and places the photographed fabric on a Roblox template.
 
 ## Run locally
 
@@ -28,10 +28,12 @@ The Vite development server forwards `/api` to port 8000. To use a different bac
 ## What works now
 
 - In **Auto Bash**, browse, drop, or paste a main photo. You can also add one back photo and up to three angles. The uploader accepts JPG, PNG, and WebP images up to 10 MB and 20 megapixels each.
-- Choose **Auto** for a template suggestion or select **Shirt**, **Pants**, or **T-Shirt** yourself. Watch the server report progress, then preview each transparent cutout and its clothing and photo type guesses.
+- Choose **Auto** for a template suggestion or select **Shirt**, **Pants**, or **T-Shirt** yourself. The processing checklist updates while the server removes the background, cuts out the parts, and places them.
+- The **Result** screen shows the template next to your photo. Use **Photo preview** to inspect the cutouts and **Show regions** to check where the parts landed. Classic templates use a 585 × 559 canvas. T-shirt graphics use a 512 × 512 canvas.
+- Placement profiles cover short-sleeve tops, long-sleeve tops, hoodies, pants, and shorts. A usable back photo supplies the rear faces. Otherwise, the rear faces stay transparent. The extra angles are available for cutout preview.
 - In **Studio**, preview or download a blank template. Shirts and pants export at 585 × 559 pixels. T-shirts export at 512 × 512 pixels. **Show regions** adds guides to the preview, and left and right refer to the avatar's sides.
 
-Photo classification is based on the visible shape and framing. A clear photo of one whole item against a plain background gives the best cutout. Busy backgrounds and photos with several garments can leave extra material or lead to a wrong guess.
+For the cleanest placement, photograph one whole garment straight-on against a plain background and spread the sleeves or legs so their edges are visible. Worn photos can include other clothing or skin in the cutouts. Side faces use strips from the photographed fabric, and the template can still have unfinished seams and unfilled areas.
 
 The classic rectangles match the coordinates in `AGENTS.md` and the face sizes in the Roblox Creator Hub guide. Direct comparison with Roblox's downloadable artwork is pending because the cloud environment could not retrieve the template archive. [Roblox Classic Clothing guide](https://create.roblox.com/docs/avatar/classic-clothing)
 
@@ -47,7 +49,7 @@ THREADPORT_REMBG=1 U2NET_HOME=/tmp/threadport-models OMP_NUM_THREADS=2 \
 
 ### Processing API
 
-`POST /process` accepts multipart form data with a required `front` file, an optional `back` file, up to three repeated `angles` files, and a `mode` value of `auto`, `shirt`, `pants`, or `t-shirt`. The response is newline-delimited JSON. It streams `progress` events, a `photo` event with a base64 PNG and classification data for each input, and a final `result` event. Photo errors that occur after streaming begins arrive as an `error` event.
+`POST /process` accepts multipart form data with a required `front` file, an optional `back` file, up to three repeated `angles` files, and a `mode` value of `auto`, `shirt`, `pants`, or `t-shirt`. The response is newline-delimited JSON. It streams `progress` events, a `photo` event with a base64 PNG and classification data for each input, and a final `result` containing the base64 template PNG, template mode, placement profile, and whether the back photo was used. Photo errors that occur after streaming begins arrive as an `error` event.
 
 ## Run the tests
 
@@ -55,13 +57,21 @@ Install the frontend and backend dependencies from the setup above, then run the
 
 ```sh
 npx playwright install chromium
-.venv/bin/python -m unittest backend.test_photos
+.venv/bin/python -m unittest backend.test_photos backend.test_placement
 npm test
 npm run build
 ```
 
-With Chromium already installed, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to its path when running `npm test`. Playwright starts its own frontend on port 4173 and API on port 8001. The backend tests check cutouts and classifications using the repository sample photos. Browser tests cover the upload and processing flow, cancellation, and the Stage 1 template tools.
+With Chromium already installed, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to its path when running `npm test`. Playwright starts its own frontend on port 4173 and API on port 8001. The backend tests check cutouts and classifications using the repository sample photos. Browser tests cover uploads, cancellation, the generated Result preview, and the Studio template tools.
+
+Rebuild the review PNGs through the same placement pipeline as Auto Bash.
+
+```sh
+.venv/bin/python -m backend.run_samples
+```
+
+See the PNGs and scores in the [visual review](samples/out/report.md).
 
 ## Next
 
-Stage 3 cuts out garment parts and places them on a Roblox template.
+Stage 4 will fill unseen areas, refine seams, and add shading and detail cleanup.

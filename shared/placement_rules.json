@@ -1,0 +1,25 @@
+{
+  "profiles": {
+    "t_shirt": {
+      "mode": "shirt",
+      "limb_height": 0.4
+    },
+    "long_sleeve": {
+      "mode": "shirt",
+      "limb_height": 1
+    },
+    "hoodie": {
+      "mode": "shirt",
+      "limb_height": 1,
+      "hood_on_top": true
+    },
+    "pants": {
+      "mode": "pants",
+      "limb_height": 1
+    },
+    "shorts": {
+      "mode": "pants",
+      "limb_height": 0.5
+    }
+  }
+}

@@ -4,3 +4,4 @@ numpy>=2.0,<2.5
 opencv-python-headless==4.13.0.92
 Pillow==12.3.0
 python-multipart==0.0.34
+rembg[cpu]==2.0.87

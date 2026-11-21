@@ -37,9 +37,14 @@ function PhotoExamples() {
       <dialog ref={dialog} className="panel examples-dialog" aria-labelledby="examples-title">
         <div className="dialog-heading">
           <h2 id="examples-title">Good vs bad photos</h2>
-          <form method="dialog">
-            <button className="icon-button" aria-label="Close examples"><X size={19} aria-hidden="true" /></button>
-          </form>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Close examples"
+            onClick={() => dialog.current?.close()}
+          >
+            <X size={19} aria-hidden="true" />
+          </button>
         </div>
         <div className="example-grid">
           <figure>

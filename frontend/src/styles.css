@@ -501,14 +501,6 @@ main.studio { max-width: none; }
 .process-page h1:focus { outline: none; }
 .process-grid { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: start; }
 .process-preview { overflow: hidden; }
-.process-preview select {
-  max-width: 100%;
-  padding: 6px 8px;
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  background: var(--color-surface-2);
-  font-size: 13px;
-}
 .process-image {
   position: relative;
   display: grid;
@@ -562,3 +554,75 @@ main.studio { max-width: none; }
 @media (prefers-reduced-motion: reduce) {
   .secondary-button, .icon-button, .slot-picker, .text-button { transition: none; }
 }
+
+.result-page h1:focus { outline: none; }
+.result-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.74fr) minmax(0, 1.65fr) minmax(0, 0.8fr);
+  gap: 24px;
+  align-items: start;
+}
+.result-source { overflow: hidden; }
+.result-photo {
+  display: grid;
+  place-items: center;
+  min-height: 160px;
+  background-color: var(--color-surface-2);
+}
+.result-photo img { width: 100%; max-height: 340px; object-fit: contain; }
+.source-selector {
+  display: grid;
+  gap: 6px;
+  padding: 12px 16px 16px;
+  color: var(--color-muted);
+  font-size: 13px;
+}
+.source-selector select {
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-2);
+  color: var(--color-text);
+}
+.source-type { padding: 0 16px 16px; color: var(--color-muted); font-size: 13px; }
+.generated-template { overflow: hidden; }
+.generated-template > div:first-child { grid-area: 1 / 1; }
+.result-note { margin-top: 16px; color: var(--color-muted); font-size: 13px; }
+
+@media (max-width: 900px) {
+  .result-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr); }
+  .result-details { grid-column: 2; }
+}
+
+@media (max-width: 600px) {
+  .result-grid { grid-template-columns: minmax(0, 1fr); }
+  .result-grid .preview { grid-row: 1; }
+  .result-details { grid-column: 1; }
+}
+
+.controls .shading-control {
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  margin-top: 24px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.controls .shading-control legend {
+  padding-inline: 5px;
+  margin-bottom: 0;
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.shading-control label {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.shading-control label span, .shading-control p { color: var(--color-muted); }
+.shading-control p { margin-top: 4px; }
+.shading-control p[role="alert"] { color: var(--color-danger); }
+.shading-control input { display: block; width: 100%; margin-block: 8px 4px; accent-color: var(--color-accent); }

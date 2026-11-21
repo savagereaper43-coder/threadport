@@ -5,7 +5,8 @@ import { expect, test } from '@playwright/test'
 const shirt = fileURLToPath(new URL('../../samples/black shirt test.JPG', import.meta.url))
 const pants = fileURLToPath(new URL('../../samples/blue pants test.JPG', import.meta.url))
 
-test('uploads a main photo, back and angle, then shows the actual cutouts and classifications', async ({ page }) => {
+test('renders a shirt with its back photo and rerenders it when Quick-Fix shading changes', async ({ page }) => {
+  test.setTimeout(60_000)
   await page.goto('/')
   const submit = page.getByRole('button', { name: 'Make my Roblox clothing' })
   await expect(submit).toBeDisabled()
@@ -18,15 +19,42 @@ test('uploads a main photo, back and angle, then shows the actual cutouts and cl
   await expect(page.getByRole('img', { name: 'Main clothing photo' })).toBeVisible()
   await submit.click()
 
-  await expect(page.getByRole('heading', { name: 'Photos prepared' })).toBeVisible()
-  await expect(page.getByRole('list', { name: 'Auto Bash progress' }).locator('[aria-current=step]')).toHaveText(/Processing/)
-  await expect(page.getByRole('progressbar')).toHaveAttribute('value', '100')
-  await expect(page.locator('.process-checklist [aria-label=Complete]')).toHaveCount(2)
+  await expect(page.getByRole('heading', { name: 'Template preview' })).toBeVisible({ timeout: 25_000 })
+  await expect(page.getByRole('list', { name: 'Auto Bash progress' }).locator('[aria-current=step]')).toHaveText(/Result/)
+  const template = page.getByRole('img', { name: 'Generated Shirt template' })
+  await expect(template).toBeVisible()
+  await expect(page.getByText('The torso back uses your back photo.')).toBeVisible()
+  await expect(page.getByText('585 × 559 px')).toBeVisible()
+  // Inspect the rendered canvas so an empty or miswired preview fails.
+  const canvas = template.locator('canvas')
+  await expect.poll(async () => canvas.evaluate((node: HTMLCanvasElement) => {
+    const alpha = node.getContext('2d')?.getImageData(
+      Math.floor(node.width * 295 / 585),
+      Math.floor(node.height * 138 / 559),
+      1, 1,
+    ).data[3]
+    return alpha
+  })).toBe(255)
+  const color = () => canvas.evaluate((node: HTMLCanvasElement) => {
+    const pixel = node.getContext('2d')!.getImageData(
+      Math.floor(node.width * 233 / 585), Math.floor(node.height * 190 / 559), 1, 1,
+    )
+    return Array.from(pixel.data)
+  })
+  const before = await color()
+  const shading = page.getByRole('slider', { name: 'Shading strength' })
+  await expect(shading).toHaveValue('100')
+  const adjusted = page.waitForResponse('**/api/process', { timeout: 15_000 })
+  await shading.fill('0')
+  await expect(shading).toHaveValue('0')
+  expect((await adjusted).ok()).toBeTruthy()
+  await expect.poll(color, { timeout: 25_000 }).not.toEqual(before)
+  await expect(page.getByText('The torso back uses your back photo.')).toBeVisible()
+  await page.getByRole('checkbox', { name: 'Show regions' }).check()
+  await expect(page.getByTitle('Right arm front')).toBeVisible()
+  await page.getByRole('combobox', { name: 'Photo preview' }).selectOption({ label: 'Angle 1 cutout' })
   await expect(page.getByRole('img', { name: 'Clothing with the background removed' })).toHaveAttribute('src', /^data:image\/png;base64,/)
-  await expect(page.locator('dd', { hasText: 'Laid flat' })).toBeVisible()
-  await expect(page.locator('dd').last()).toHaveText('Shirt')
-  await page.getByRole('combobox', { name: 'Preview photo' }).selectOption({ label: 'Angle 1' })
-  await expect(page.locator('dd').last()).toHaveText('Pants')
+  await expect(page.getByText('Photo type guess: Laid flat')).toBeVisible()
   await page.getByRole('button', { name: 'Back to upload' }).click()
   await expect(page.getByRole('button', { name: 'Replace photo' })).toBeVisible()
   await expect(submit).toBeEnabled()
@@ -42,6 +70,9 @@ test('supports keyboard dismissal of photo tips, drag-and-drop and clipboard pas
   await page.keyboard.press('Escape')
   await expect(dialog).not.toBeVisible()
   await expect(examples).toBeFocused()
+  await examples.click()
+  await dialog.getByRole('button', { name: 'Close examples' }).click()
+  await expect(dialog).not.toBeVisible()
 
   const files = await page.evaluateHandle((bytes) => {
     const transfer = new DataTransfer()
@@ -73,7 +104,7 @@ test('cancels an in-flight request and returns to the selected upload', async ({
   const request = page.waitForRequest('**/api/process')
   await page.getByRole('button', { name: 'Make my Roblox clothing' }).click()
   await request
-  await expect(page.getByRole('heading', { name: 'Preparing your photos' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Preparing your template' })).toBeVisible()
   const failed = page.waitForEvent('requestfailed', (event) => event.url().endsWith('/api/process'))
   try {
     await page.getByRole('button', { name: 'Cancel' }).click()
@@ -107,15 +138,39 @@ test('the live endpoint streams ordered progress and returns the requested templ
     ['progress', 'finding', 20],
     ['progress', 'removing', 20],
     ['photo', undefined, undefined],
-    ['progress', 'removing', 99],
+    ['progress', 'removing', 60],
+    ['progress', 'cutting', 60],
+    ['progress', 'placing', 85],
     ['result', undefined, 100],
   ])
   expect(events[3]).toMatchObject({ garment_type: 't_shirt', mode: 't-shirt', method: 'grabcut' })
   expect(Buffer.from(events[3].png, 'base64').subarray(1, 4).toString()).toBe('PNG')
+
+  expect(events.at(-1).template).toMatchObject({ mode: 't-shirt', profile: 't_shirt', has_back: false })
+  const template = Buffer.from(events.at(-1).template.png, 'base64')
+  expect(template.subarray(1, 4).toString()).toBe('PNG')
+  expect([template.readUInt32BE(16), template.readUInt32BE(20)]).toEqual([512, 512])
 
   const missing = await request.post('/api/process', {
     multipart: { back: { name: 'back.jpg', mimeType: 'image/jpeg', buffer: await readFile(shirt) } },
   })
   expect(missing.status()).toBe(422)
   expect(await missing.json()).toEqual({ detail: 'Add the main photo first.' })
+
+  const invalid = await request.post('/api/process', {
+    multipart: { front: { name: 'shirt.jpg', mimeType: 'image/jpeg', buffer: await readFile(shirt) }, shading: 'NaN' },
+  })
+  expect(invalid.status()).toBe(422)
+  expect(await invalid.json()).toEqual({ detail: 'Choose a shading strength from 0% to 100%.' })
+})
+
+
+test('a single flat-lay photo produces a pants preview on a narrow screen', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.goto('/')
+  await page.locator('.drop-zone input[type=file]').setInputFiles(pants)
+  await page.getByRole('button', { name: 'Make my Roblox clothing' }).click()
+  await expect(page.getByRole('img', { name: 'Generated Pants template' })).toBeVisible()
+  await expect(page.getByText('Add a back photo to fill the torso back. The arms or legs wrap using fabric from your photo.')).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(375)
 })

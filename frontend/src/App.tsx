@@ -2,6 +2,7 @@ import { Download, Folder, Grid2X2, Shirt } from 'lucide-react'
 import { motion, useReducedMotion } from 'motion/react'
 import { useState } from 'react'
 import { AutoBash } from './AutoBash'
+import type { AutoBashStep } from './AutoBash'
 import { exportTemplatePng, regionLabel, templates } from './template'
 import type { TemplateKind } from './template'
 
@@ -123,12 +124,12 @@ function TemplateWorkspace() {
 export function App() {
   const [view, setView] = useState<View>('Auto Bash')
   const [projectName, setProjectName] = useState('Untitled project')
-  const [processing, setProcessing] = useState(false)
+  const [step, setStep] = useState<AutoBashStep>('Upload')
   const reduceMotion = useReducedMotion()
 
   function switchView(next: View) {
     if (next === view) return
-    setProcessing(false)
+    setStep('Upload')
     setView(next)
   }
 
@@ -142,10 +143,10 @@ export function App() {
           <div className="top-bar-center">
             {view === 'Auto Bash' && (
               <ol className="steps" aria-label="Auto Bash progress">
-                {steps.map((step, index) => (
-                  <li key={step} aria-current={index === (processing ? 1 : 0) ? 'step' : undefined}>
+                {steps.map((label, index) => (
+                  <li key={label} aria-current={label === step ? 'step' : undefined}>
                     {index > 0 && <span aria-hidden="true">·</span>}
-                    {step}
+                    {label}
                   </li>
                 ))}
               </ol>
@@ -197,7 +198,7 @@ export function App() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: reduceMotion ? 0 : 0.2, ease: 'easeOut' }}
       >
-        {view === 'Auto Bash' ? <AutoBash onProcessingChange={setProcessing} /> : (
+        {view === 'Auto Bash' ? <AutoBash onStepChange={setStep} /> : (
           <>
             <div className="page-heading">
               <h1>{view}</h1>

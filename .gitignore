@@ -4,3 +4,5 @@ dist/
 __pycache__/
 test-results/
 playwright-report/
+
+.threadport-models/

@@ -18,13 +18,22 @@ export type Cutout = {
   mode: TemplateKind
 }
 
-export type Progress = { step: 'finding' | 'removing'; percent: number }
+export type Progress = { step: 'finding' | 'removing' | 'cutting' | 'placing'; percent: number }
+
+export type PlacedTemplate = {
+  png: string
+  mode: TemplateKind
+  profile: 't_shirt' | 'long_sleeve' | 'hoodie' | 'pants' | 'shorts'
+  has_back: boolean
+}
+
+export type ProcessResult = { photos: Cutout[]; template: PlacedTemplate }
 
 type ProcessingEvent =
   | ({ type: 'progress' } & Progress)
   | ({ type: 'photo' } & Cutout)
   | { type: 'error'; message: string }
-  | { type: 'result'; percent: 100 }
+  | { type: 'result'; percent: 100; template: PlacedTemplate }
 
 const unavailable = 'We couldn’t reach the photo service. Make sure it’s running and try again.'
 
@@ -33,13 +42,15 @@ export async function processPhotos(
   mode: Mode,
   signal: AbortSignal,
   onProgress: (progress: Progress) => void,
-): Promise<Cutout[]> {
+  shading = 1,
+): Promise<ProcessResult> {
   if (!front) throw new Error('Add the main photo first.')
   const body = new FormData()
   body.set('front', front)
   if (back) body.set('back', back)
   for (const angle of angles) body.append('angles', angle)
   body.set('mode', mode)
+  body.set('shading', String(shading))
 
   let response: Response
   try {
@@ -76,8 +87,8 @@ export async function processPhotos(
         if (message.type === 'error') throw new Error(message.message)
         if (message.type === 'progress') onProgress(message)
         if (message.type === 'photo') photos.push(message)
-        if (message.type === 'result' && photos.length === 1 + Number(Boolean(back)) + angles.length) {
-          return photos
+        if (message.type === 'result' && message.template && photos.length === 1 + Number(Boolean(back)) + angles.length) {
+          return { photos, template: message.template }
         }
       }
     }

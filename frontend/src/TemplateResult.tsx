@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Image as CanvasImage, Layer, Stage } from 'react-konva'
 import { usePhotoUrl } from './PhotoUpload'
+import { processPhotos } from './photos'
 import type { PlacedTemplate, ProcessResult } from './photos'
 import { regionLabel, templates } from './template'
 
@@ -74,8 +75,9 @@ function GeneratedTemplate({ template, showRegions }: { template: PlacedTemplate
   )
 }
 
-export default function TemplateResult({ original, result, onBack }: {
+export default function TemplateResult({ original, backPhoto, result, onBack }: {
   original: File
+  backPhoto: File | null
   result: ProcessResult
   onBack: () => void
 }) {
@@ -83,13 +85,42 @@ export default function TemplateResult({ original, result, onBack }: {
   const heading = useRef<HTMLHeadingElement>(null)
   const [selected, setSelected] = useState(-1)
   const [showRegions, setShowRegions] = useState(false)
-  const { photos, template } = result
+  const [shading, setShading] = useState(100)
+  const [rendered, setRendered] = useState({ strength: 100, template: result.template })
+  const [shadingError, setShadingError] = useState('')
+  const [retryCount, setRetryCount] = useState(0)
+  const { photos } = result
+  const { template } = rendered
   const { label, width, height } = templates[template.mode]
   const cutout = photos[selected]
   const photoType = photoTypes[(cutout ?? photos[0]).photo_type]
   const firstAngle = photos.findIndex(({ role }) => role === 'angles')
 
   useEffect(() => { heading.current?.focus() }, [])
+
+  useEffect(() => {
+    if (result.template.mode !== 'shirt' || shading === rendered.strength) return
+    if (shading === 100) {
+      setRendered({ strength: 100, template: result.template })
+      return
+    }
+    const request = new AbortController()
+    const timer = window.setTimeout(async () => {
+      try {
+        const answer = await processPhotos({ front: original, back: backPhoto, angles: [] },
+          'shirt', request.signal, () => {}, shading / 100)
+        if (!request.signal.aborted) setRendered({ strength: shading, template: answer.template })
+      } catch {
+        if (!request.signal.aborted) {
+          setShadingError('Couldn’t update the shading. Try again.')
+        }
+      }
+    }, 450)
+    return () => {
+      window.clearTimeout(timer)
+      request.abort()
+    }
+  }, [backPhoto, original, rendered.strength, result.template, retryCount, shading])
 
   return (
     <div className="result-page">
@@ -135,8 +166,42 @@ export default function TemplateResult({ original, result, onBack }: {
             <p className="result-note">
               {template.has_back
                 ? 'The torso back uses your back photo.'
-                : 'Add a back photo to fill the torso back. The arms or legs wrap using fabric from your photo.'}
+                : template.mode === 'shirt'
+                  ? 'The torso back uses fabric from your front photo.'
+                  : 'Add a back photo to fill the torso back. The arms or legs wrap using fabric from your photo.'}
             </p>
+          )}
+          {template.mode === 'shirt' && (
+            <fieldset className="shading-control">
+              <legend>Quick-Fix</legend>
+              <label htmlFor="shading-strength">
+                Shading strength
+                <span aria-hidden="true">{shading}%</span>
+              </label>
+              <input
+                id="shading-strength"
+                type="range"
+                min={0}
+                max={100}
+                value={shading}
+                aria-valuetext={`${shading}%`}
+                onChange={(event) => {
+                  setShadingError('')
+                  setShading(event.target.valueAsNumber)
+                }}
+              />
+              {shadingError ? (
+                <>
+                  <p role="alert">{shadingError}</p>
+                  <button className="text-button" type="button" onClick={() => {
+                    setShadingError('')
+                    setRetryCount((count) => count + 1)
+                  }}>Retry shading</button>
+                </>
+              ) : shading !== rendered.strength && (
+                <p role="status">Updating shading…</p>
+              )}
+            </fieldset>
           )}
           <label className="guide-control">
             <span>Show regions</span>

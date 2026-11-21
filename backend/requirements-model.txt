@@ -1,2 +1,2 @@
+# Kept for existing setup commands. Classic Shirt uses rembg by default.
 -r requirements.txt
-rembg[cpu]==2.0.87

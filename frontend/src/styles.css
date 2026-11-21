@@ -600,3 +600,29 @@ main.studio { max-width: none; }
   .result-grid .preview { grid-row: 1; }
   .result-details { grid-column: 1; }
 }
+
+.controls .shading-control {
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  margin-top: 24px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.controls .shading-control legend {
+  padding-inline: 5px;
+  margin-bottom: 0;
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.shading-control label {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.shading-control label span, .shading-control p { color: var(--color-muted); }
+.shading-control p { margin-top: 4px; }
+.shading-control p[role="alert"] { color: var(--color-danger); }
+.shading-control input { display: block; width: 100%; margin-block: 8px 4px; accent-color: var(--color-accent); }

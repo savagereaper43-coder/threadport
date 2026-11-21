@@ -5,7 +5,8 @@ import { expect, test } from '@playwright/test'
 const shirt = fileURLToPath(new URL('../../samples/black shirt test.JPG', import.meta.url))
 const pants = fileURLToPath(new URL('../../samples/blue pants test.JPG', import.meta.url))
 
-test('places a main and back photo on a template and keeps the angle cutout available', async ({ page }) => {
+test('renders a shirt with its back photo and rerenders it when Quick-Fix shading changes', async ({ page }) => {
+  test.setTimeout(60_000)
   await page.goto('/')
   const submit = page.getByRole('button', { name: 'Make my Roblox clothing' })
   await expect(submit).toBeDisabled()
@@ -18,7 +19,7 @@ test('places a main and back photo on a template and keeps the angle cutout avai
   await expect(page.getByRole('img', { name: 'Main clothing photo' })).toBeVisible()
   await submit.click()
 
-  await expect(page.getByRole('heading', { name: 'Template preview' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Template preview' })).toBeVisible({ timeout: 25_000 })
   await expect(page.getByRole('list', { name: 'Auto Bash progress' }).locator('[aria-current=step]')).toHaveText(/Result/)
   const template = page.getByRole('img', { name: 'Generated Shirt template' })
   await expect(template).toBeVisible()
@@ -34,6 +35,21 @@ test('places a main and back photo on a template and keeps the angle cutout avai
     ).data[3]
     return alpha
   })).toBe(255)
+  const color = () => canvas.evaluate((node: HTMLCanvasElement) => {
+    const pixel = node.getContext('2d')!.getImageData(
+      Math.floor(node.width * 233 / 585), Math.floor(node.height * 190 / 559), 1, 1,
+    )
+    return Array.from(pixel.data)
+  })
+  const before = await color()
+  const shading = page.getByRole('slider', { name: 'Shading strength' })
+  await expect(shading).toHaveValue('100')
+  const adjusted = page.waitForResponse('**/api/process', { timeout: 15_000 })
+  await shading.fill('0')
+  await expect(shading).toHaveValue('0')
+  expect((await adjusted).ok()).toBeTruthy()
+  await expect.poll(color, { timeout: 25_000 }).not.toEqual(before)
+  await expect(page.getByText('The torso back uses your back photo.')).toBeVisible()
   await page.getByRole('checkbox', { name: 'Show regions' }).check()
   await expect(page.getByTitle('Right arm front')).toBeVisible()
   await page.getByRole('combobox', { name: 'Photo preview' }).selectOption({ label: 'Angle 1 cutout' })
@@ -140,6 +156,12 @@ test('the live endpoint streams ordered progress and returns the requested templ
   })
   expect(missing.status()).toBe(422)
   expect(await missing.json()).toEqual({ detail: 'Add the main photo first.' })
+
+  const invalid = await request.post('/api/process', {
+    multipart: { front: { name: 'shirt.jpg', mimeType: 'image/jpeg', buffer: await readFile(shirt) }, shading: 'NaN' },
+  })
+  expect(invalid.status()).toBe(422)
+  expect(await invalid.json()).toEqual({ detail: 'Choose a shading strength from 0% to 100%.' })
 })
 
 

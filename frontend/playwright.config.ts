@@ -20,7 +20,7 @@ export default defineConfig({
       command: '.venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8001',
       cwd: '..',
       url: 'http://127.0.0.1:8001/health',
-      env: { THREADPORT_REMBG: '0' },
+      env: { THREADPORT_REMBG: '0', OMP_NUM_THREADS: process.env.OMP_NUM_THREADS ?? '2' },
     },
   ],
 })

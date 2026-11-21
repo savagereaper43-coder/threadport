@@ -126,7 +126,7 @@ export function AutoBash({ onStepChange }: { onStepChange: (step: AutoBashStep) 
   if (result && photos.front) {
     return (
       <Suspense fallback={<p role="status">Opening template preview…</p>}>
-        <TemplateResult original={photos.front} result={result} onBack={returnToUpload} />
+        <TemplateResult original={photos.front} backPhoto={photos.back} result={result} onBack={returnToUpload} />
       </Suspense>
     )
   }

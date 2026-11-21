@@ -15,6 +15,7 @@ from starlette.formparsers import MultiPartException, MultiPartParser
 from .garment_parts import segment_parts
 from .placement import place_template
 from .photos import PhotoError, decode_photo, find_face, prepare_cutout, work_photo
+from .shirt_engine import make_core_shirt
 
 MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_REQUEST_BYTES = 5 * MAX_FILE_BYTES + 64 * 1024
@@ -36,11 +37,11 @@ async def limited_body(request: Request) -> AsyncIterator[bytes]:
         yield chunk
 
 
-async def read_photos(request: Request) -> tuple[str, list[tuple[str, bytes]]]:
+async def read_photos(request: Request) -> tuple[str, list[tuple[str, bytes]], float]:
     if request.headers.get("content-type", "").split(";", 1)[0].lower() != "multipart/form-data":
         raise HTTPException(415, "Add a photo and try uploading again.")
 
-    parser = MultiPartParser(request.headers, limited_body(request), max_files=5, max_fields=1, max_part_size=128)
+    parser = MultiPartParser(request.headers, limited_body(request), max_files=5, max_fields=2, max_part_size=128)
     try:
         form = await parser.parse()
     except UploadTooLarge as error:
@@ -53,11 +54,17 @@ async def read_photos(request: Request) -> tuple[str, list[tuple[str, bytes]]]:
         if not fields["front"]:
             raise HTTPException(422, "Add the main photo first.")
         if (len(fields["front"]) != 1 or len(fields["back"]) > 1 or len(fields["angles"]) > 3
-                or set(form) - {"front", "back", "angles", "mode"}):
+                or set(form) - {"front", "back", "angles", "mode", "shading"}):
             raise HTTPException(422, "Add one main photo, an optional back photo and up to three more angles.")
         mode = form.get("mode", "auto")
         if not isinstance(mode, str) or mode not in MODES:
             raise HTTPException(422, "Choose Auto, Shirt, Pants or T-Shirt.")
+        try:
+            shading = float(form.get("shading", "1"))
+        except (TypeError, ValueError):
+            shading = -1
+        if not 0 <= shading <= 1:
+            raise HTTPException(422, "Choose a shading strength from 0% to 100%.")
         photos = []
         for role, files in fields.items():
             for upload in files:
@@ -67,7 +74,7 @@ async def read_photos(request: Request) -> tuple[str, list[tuple[str, bytes]]]:
                 if len(data) > MAX_FILE_BYTES:
                     raise HTTPException(413, "Each photo must be 10 MB or smaller.")
                 photos.append((role, data))
-        return mode, photos
+        return mode, photos, shading
     finally:
         await form.close()
 
@@ -82,7 +89,9 @@ def inspect(data: bytes):
     return image, rgb, find_face(rgb)
 
 
-async def process_events(mode: str, photos: list[tuple[str, bytes]]) -> AsyncIterator[str]:
+async def process_events(
+    mode: str, photos: list[tuple[str, bytes]], shading: float = 1.0
+) -> AsyncIterator[str]:
     try:
         yield event("progress", step="finding", percent=0)
         inspected = []
@@ -102,26 +111,32 @@ async def process_events(mode: str, photos: list[tuple[str, bytes]]) -> AsyncIte
         yield event("progress", step="cutting", percent=60)
         png, details = source_photos["front"]
         template_mode = details["mode"]
-        front = await run_in_threadpool(
-            segment_parts, png, template_mode, details["garment_type"], photo_type=details["photo_type"]
-        )
-        back = None
-        if template_mode != "t-shirt" and "back" in source_photos:
-            png, details = source_photos["back"]
-            try:
-                back = await run_in_threadpool(
-                    segment_parts, png, template_mode, details["garment_type"], back=True,
-                    profile=front.profile, photo_type=details["photo_type"]
-                )
-            except PhotoError:
-                pass  # An unreadable back silhouette should not discard the front template.
-
-        yield event("progress", step="placing", percent=85)
-        template = await run_in_threadpool(place_template, template_mode, front, back)
+        if template_mode == "shirt":
+            originals = {role: image[0] for role, image in inspected}
+            back = originals.get("back")
+            yield event("progress", step="placing", percent=85)
+            template, profile = await run_in_threadpool(make_core_shirt, originals["front"], back, shading)
+        else:
+            front = await run_in_threadpool(
+                segment_parts, png, template_mode, details["garment_type"], photo_type=details["photo_type"]
+            )
+            back = None
+            if template_mode == "pants" and "back" in source_photos:
+                png, details = source_photos["back"]
+                try:
+                    back = await run_in_threadpool(
+                        segment_parts, png, template_mode, details["garment_type"], back=True,
+                        profile=front.profile, photo_type=details["photo_type"]
+                    )
+                except PhotoError:
+                    pass  # An unreadable back silhouette should not discard the front template.
+            yield event("progress", step="placing", percent=85)
+            template = await run_in_threadpool(place_template, template_mode, front, back)
+            profile = front.profile
         yield event("result", percent=100, template={
             "png": base64.b64encode(template).decode("ascii"),
             "mode": template_mode,
-            "profile": front.profile,
+            "profile": profile,
             "has_back": back is not None,
         })
     except PhotoError as error:
@@ -133,9 +148,9 @@ async def process_events(mode: str, photos: list[tuple[str, bytes]]) -> AsyncIte
 
 @router.post("/process")
 async def process(request: Request):
-    mode, photos = await read_photos(request)
+    mode, photos, shading = await read_photos(request)
     return StreamingResponse(
-        process_events(mode, photos),
+        process_events(mode, photos, shading),
         media_type="application/x-ndjson",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )

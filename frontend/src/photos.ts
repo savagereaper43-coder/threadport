@@ -42,6 +42,7 @@ export async function processPhotos(
   mode: Mode,
   signal: AbortSignal,
   onProgress: (progress: Progress) => void,
+  shading = 1,
 ): Promise<ProcessResult> {
   if (!front) throw new Error('Add the main photo first.')
   const body = new FormData()
@@ -49,6 +50,7 @@ export async function processPhotos(
   if (back) body.set('back', back)
   for (const angle of angles) body.append('angles', angle)
   body.set('mode', mode)
+  body.set('shading', String(shading))
 
   let response: Response
   try {

@@ -453,7 +453,7 @@ export default function StudioEditor({ project, change, openProject, createProje
           <span className="template-size">{width} × {height} px</span>
           <div className="studio-row">
             <button type="button" aria-label="Zoom out" onClick={() => setFrame({ ...frame, zoom: bound(frame.zoom / 1.4, .25, 16) })}>−</button>
-            <button type="button" aria-label="Fit canvas" onClick={() => { setFrame(fitFrame); setRegion(undefined) }}>{Math.round(frame.zoom * 100)}%</button>
+            <button type="button" aria-label={`${Math.round(frame.zoom * 100)}% zoom, fit canvas`} onClick={() => { setFrame(fitFrame); setRegion(undefined) }}>{Math.round(frame.zoom * 100)}%</button>
             <button type="button" aria-label="Zoom in" onClick={() => setFrame({ ...frame, zoom: bound(frame.zoom * 1.4, .25, 16) })}>+</button>
           </div>
         </div>

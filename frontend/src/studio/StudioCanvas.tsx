@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { DragEvent, PointerEvent } from 'react'
+import type { DragEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent } from 'react'
 import { regionLabel, templates } from '../template'
 import { faceKey } from './model'
 import type { Face, Layer, Point, Project, Selection } from './model'
@@ -25,6 +25,8 @@ export function StudioCanvas({ project, image, tool, options, selected, layer, r
   const [trace, setTrace] = useState<Point[]>([])
   const track = useRef<{ points: Point[]; start: Point; frame: Frame; pan: boolean } | null>(null)
   const [hover, setHover] = useState<Face>()
+  const [cursor, setCursor] = useState<Point>()
+  const keyboardPath = useRef<Point[]>([])
   const space = useRef(false)
   const { width: w, height: h, regions, label } = templates[project.kind]
   const scale = width / w * frame.zoom
@@ -81,22 +83,82 @@ export function StudioCanvas({ project, image, tool, options, selected, layer, r
     return clamp ? { x: bound(x, 0, w - 1), y: bound(y, 0, h - 1) } : { x, y }
   }
 
+  function selectColor(p: Point) {
+    if (!image) return
+    const ctx = surface(w, h)
+    ctx.drawImage(image, 0, 0)
+    setSelection(colorSelection(ctx, p, options.tolerance, tool === 'object'))
+  }
+
+  function clearKeyboard() {
+    keyboardPath.current = []
+    setCursor(undefined)
+    setTrace([])
+  }
+
+  function keyboard(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.ctrlKey || event.metaKey) return
+    if (event.key === 'Escape') {
+      clearKeyboard()
+      return
+    }
+    const area = region ?? regions.find((face) => face.part === 'torso' && face.face === 'front')!
+    const defaultPoint = { x: Math.round(area.x + area.w / 2), y: Math.round(area.y + area.h / 2) }
+    const p = cursor ?? defaultPoint
+    const direction = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[event.key]
+    if (direction) {
+      event.preventDefault()
+      const [dx, dy] = direction
+      if (tool === 'hand') {
+        setFrame({ ...frame, x: frame.x - dx * 24, y: frame.y - dy * 24 })
+        return
+      }
+      const step = event.shiftKey ? 12 : 1
+      const next = { x: bound(p.x + dx * step, 0, w - 1), y: bound(p.y + dy * step, 0, h - 1) }
+      setCursor(next)
+      if (keyboardPath.current.length) {
+        if (tool === 'lasso' || isStroke(tool)) keyboardPath.current.push(next)
+        setTrace([...keyboardPath.current, next])
+      }
+      return
+    }
+    if (event.key !== 'Enter' || event.repeat) return
+    event.preventDefault()
+    setCursor(p)
+    if (tool === 'zoom') {
+      setFrame({ ...frame, zoom: bound(frame.zoom * (event.altKey ? .667 : 1.5), .25, 16) })
+    } else if (tool === 'wand' || tool === 'object') selectColor(p)
+    else if (tool === 'hand') return
+    else if (keyboardPath.current.length) {
+      complete([...keyboardPath.current, p], event.altKey)
+      keyboardPath.current = []
+      setTrace([])
+    } else if (['move', 'warp', 'perspective', 'rectangle', 'lasso', 'crop', 'gradient', 'shape'].includes(tool)
+        || (isStroke(tool) && event.shiftKey)) {
+      if (tool === 'move' && !layer) {
+        const hit = [...project.layers].reverse().find((item) => !item.hidden && !item.locked && includes(item, p))
+        if (!hit) return
+        chooseLayer(hit)
+      }
+      keyboardPath.current = [p]
+      setTrace([p])
+    } else complete([p], event.altKey)
+  }
+
   function start(event: PointerEvent<HTMLDivElement>) {
     if (event.button !== 0 && event.button !== 1) return
     const pan = space.current || tool === 'hand' || event.button === 1
     const p = point(event)
     if (!pan && !includes({ x: 0, y: 0, w, h }, p)) return
     event.currentTarget.focus()
+    clearKeyboard()
     if (!pan) {
       if (tool === 'zoom') {
         setFrame({ ...frame, zoom: bound(frame.zoom * (event.altKey ? .667 : 1.5), .25, 16) })
         return
       }
       if (tool === 'wand' || tool === 'object') {
-        if (!image) return
-        const ctx = surface(w, h)
-        ctx.drawImage(image, 0, 0)
-        setSelection(colorSelection(ctx, p, options.tolerance, tool === 'object'))
+        selectColor(p)
         return
       }
       if (tool === 'move' && (!layer || !includes(layer, p))) {
@@ -127,19 +189,24 @@ export function StudioCanvas({ project, image, tool, options, selected, layer, r
     setTrace([])
     if (!active || active.pan) return
     const points = [...active.points, point(event, !['move', 'warp', 'perspective'].includes(tool))]
+    complete(points, event.altKey)
+  }
+
+  function complete(points: Point[], alt: boolean) {
     if (tool === 'rectangle' || tool === 'lasso') {
       const box = tool === 'rectangle' ? boxBetween(points[0], end(points))
         : boxBetween({ x: Math.min(...points.map((p) => p.x)), y: Math.min(...points.map((p) => p.y)) },
           { x: Math.max(...points.map((p) => p.x)), y: Math.max(...points.map((p) => p.y)) })
       setSelection({ box, points: tool === 'lasso' && points.length > 2 ? points : undefined })
-    } else gesture(points, event.altKey)
+    } else gesture(points, alt)
   }
 
   function dropFace(event: DragEvent) {
     return regions.find((face) => includes(face, point(event)))
   }
 
-  return <div ref={viewport} className={`studio-viewport tool-${tool}`} tabIndex={0} aria-label="Studio canvas"
+  return <div ref={viewport} className={`studio-viewport tool-${tool}`} role="group" tabIndex={0} aria-label="Studio canvas"
+    aria-describedby="studio-keyboard-help" onKeyDown={keyboard} onBlur={clearKeyboard}
     onPointerDown={start} onPointerMove={move} onPointerUp={finish}
     onPointerCancel={() => { track.current = null; setTrace([]) }}
     onDragOver={(event) => {
@@ -154,9 +221,11 @@ export function StudioCanvas({ project, image, tool, options, selected, layer, r
       if (face && piece) onDropPiece(piece, face)
       setHover(undefined)
     }}>
+    <p className="sr-only" id="studio-keyboard-help">Use arrow keys to move the cursor. Hold Shift to move farther. Press Enter to use the tool or set each end of a line or selection. Use Shift and Enter to start a brush stroke, then Enter to finish.</p>
     <div ref={paper} className="checkerboard studio-paper" style={{ width: w * scale, height: h * scale,
       transform: `translate(calc(-50% + ${frame.x}px), calc(-50% + ${frame.y}px))` }}>
       <canvas aria-label={`${label} template canvas`} role="img" ref={canvas} width={w} height={h} />
+      {cursor && <span className="studio-keyboard-cursor" aria-hidden="true" style={{ left: cursor.x * scale, top: cursor.y * scale }} />}
       {scale >= 6 && <div className="studio-pixel-grid" aria-hidden="true" style={{ backgroundSize: `${scale}px ${scale}px` }} />}
       {regions.filter((face) => showRegions || face === region || face === hover || (showSeams && region?.part === face.part)).map((face) =>
         <div key={faceKey(face)} className={`region studio-region${face === region || face === hover ? ' studio-region-active' : ''}`}

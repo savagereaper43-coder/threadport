@@ -1,15 +1,15 @@
 import { Folder } from 'lucide-react'
 import { motion, useReducedMotion } from 'motion/react'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
-import { AutoBash } from './AutoBash'
 import type { AutoBashStep } from './AutoBash'
 import { Home, Projects } from './studio/Projects'
-import { HelpCenter } from './extras/HelpCenter'
 import { deleteProject, id, loadProjects, newProject, saveProject } from './studio/model'
 import type { Project } from './studio/model'
 import type { TemplateKind } from './template'
 
 const StudioEditor = lazy(() => import('./studio/StudioEditor'))
+const AutoBash = lazy(() => import('./AutoBash').then(({ AutoBash }) => ({ default: AutoBash })))
+const HelpCenter = lazy(() => import('./extras/HelpCenter').then(({ HelpCenter }) => ({ default: HelpCenter })))
 const routes = { Home: '', 'Auto Bash': '#auto-bash', Studio: '#studio', 'My Projects': '#projects', 'Help center': '#help' }
 type View = keyof typeof routes
 const modes = ['Auto Bash', 'Studio'] as const
@@ -21,6 +21,7 @@ function currentView(): View {
 
 export function App() {
   const [view, setView] = useState<View>(currentView)
+  const main = useRef<HTMLElement>(null)
   const projects = useRef(new Map<string, Project>())
   const discarded = useRef(new Set<string>())
   const [cards, setCards] = useState<Project[]>([])
@@ -109,6 +110,7 @@ export function App() {
   }
 
   return <>
+    <button type="button" className="skip-link" onClick={() => main.current?.focus()}>Skip to main content</button>
     <header className="top-bar">
       <div className="top-bar-inner">
         <button className="wordmark" type="button" onClick={() => navigate('Home')}>ThreadPort</button>
@@ -133,17 +135,21 @@ export function App() {
       </div>
     </header>
 
-    <motion.main key={view} className={view === 'Studio' ? 'studio' : undefined}
+    <motion.main ref={main} tabIndex={-1} key={view} className={view === 'Studio' ? 'studio' : undefined}
       initial={reduceMotion ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
       transition={{ duration: reduceMotion ? 0 : .2, ease: 'easeOut' }}>
       {storageError && <p className="storage-error" role="alert">{storageError}</p>}
       {view === 'Home' && <Home projects={cards} open={openProject} start={() => navigate('Auto Bash')} studio={() => navigate('Studio')} />}
-      {view === 'Auto Bash' && <AutoBash onStepChange={setStep} openStudio={openProject} />}
+      {view === 'Auto Bash' && <Suspense fallback={<p role="status">Opening Auto Bash…</p>}>
+        <AutoBash onStepChange={setStep} openStudio={openProject} />
+      </Suspense>}
       {view === 'Studio' && <Suspense fallback={<p role="status">Opening Studio…</p>}>
         <StudioEditor key={activeProject.id} project={activeProject} change={changeProject} openProject={openProject}
           createProject={create} saving={pending ? 'Saving…' : cards.some((item) => item.id === activeProject.id) && !storageError ? 'Saved' : ''} />
       </Suspense>}
-      {view === 'Help center' && <HelpCenter />}
+      {view === 'Help center' && <Suspense fallback={<p role="status">Opening Help center…</p>}>
+        <HelpCenter />
+      </Suspense>}
       {view === 'My Projects' && <Projects projects={cards} open={openProject}
         duplicate={(project) => write({ ...project, id: id(), name: `${project.name} copy`, updated: Date.now() })}
         remove={remove} move={(project, folder) => write({ ...project, folder, updated: Date.now() })}

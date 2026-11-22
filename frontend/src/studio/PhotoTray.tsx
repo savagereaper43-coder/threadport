@@ -115,6 +115,27 @@ export function PhotoTray({ photos, pieces, selected, choose, addPhoto, updatePh
     setTrace([])
   }
 
+  function selectVisiblePhoto() {
+    const image = work.current
+    if (!image) return
+    const { naturalWidth: width, naturalHeight: height } = image
+    if (!width || !height) return
+    const ctx = surface(width, height)
+    ctx.drawImage(image, 0, 0)
+    const { data } = ctx.getImageData(0, 0, width, height)
+    let left = width, top = height, right = -1, bottom = -1
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        if (!data[(y * width + x) * 4 + 3]) continue
+        left = Math.min(left, x)
+        right = Math.max(right, x)
+        top = Math.min(top, y)
+        bottom = Math.max(bottom, y)
+      }
+    }
+    if (right >= left) setSelection({ box: { x: left, y: top, w: right - left + 1, h: bottom - top + 1 } })
+  }
+
   function cut() {
     const image = work.current
     if (!image || !photo || !selection) return
@@ -154,6 +175,7 @@ export function PhotoTray({ photos, pieces, selected, choose, addPhoto, updatePh
           onClick={() => { setMethod('lasso'); setSelection(undefined) }}>Lasso</button>
         {photo.cutout && <label><input type="checkbox" checked={useCutout}
           onChange={(event) => { setUseCutout(event.target.checked); setSelection(undefined) }} /> Show cutout</label>}
+        <button className="secondary-button" type="button" onClick={selectVisiblePhoto}>Select whole photo</button>
         <button className="secondary-button" type="button" disabled={!selection} onClick={cut}><Scissors size={14} /> Cut selected piece</button>
         <button className="secondary-button" aria-label="Close photo cutter" type="button" onClick={() => setOpen('')}><X size={16} /></button>
       </div>

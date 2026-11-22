@@ -3,7 +3,12 @@
 import base64
 import json
 import logging
+import os
 from collections.abc import AsyncIterator
+from io import BytesIO
+
+import numpy as np
+from PIL import Image
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -12,11 +17,14 @@ from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 from starlette.formparsers import MultiPartException, MultiPartParser
 
+from autobash_core.autobash import apply_shading, clone_fill, graphic_mask
+
 from .garment_parts import segment_parts
 from .placement import place_template
-from .photos import PhotoError, decode_photo, find_face, prepare_cutout, work_photo
+from .photos import COLOR_PROFILE, PhotoError, decode_photo, find_face, prepare_cutout, work_photo
 from .quality import fill_unseen, finish_images, review_templates
-from .shirt_engine import make_core_shirt, shirt_photo
+from .quality import face_view, rgba
+from .shirt_engine import isnet_cutout, make_core_shirt, shirt_photo
 
 MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_REQUEST_BYTES = 5 * MAX_FILE_BYTES + 64 * 1024
@@ -90,20 +98,64 @@ def inspect(data: bytes):
     return image, rgb, find_face(rgb)
 
 
+def available_cutout(photo, rgb, face, mode):
+    try:
+        return prepare_cutout(photo, rgb, face, mode)
+    except PhotoError as initial_error:
+        if os.getenv("THREADPORT_CORE_MODEL", "1") == "0":
+            raise
+        try:
+            return prepare_cutout(photo, rgb, face, mode, isnet_mask=isnet_cutout(rgb))
+        except Exception:
+            raise initial_error from None
+
+
+def classical_shirt(source_photos, shading: float) -> tuple[bytes, str, bool]:
+    front_png, details = source_photos["front"]
+    front = segment_parts(front_png, "shirt", details["garment_type"], photo_type=details["photo_type"])
+    back = None
+    if "back" in source_photos:
+        back_png, back_details = source_photos["back"]
+        try:
+            back = segment_parts(back_png, "shirt", back_details["garment_type"], back=True,
+                                 profile=front.profile, photo_type=back_details["photo_type"])
+        except PhotoError:
+            pass
+    canvas = rgba(place_template("shirt", front, back))
+    if back is None:
+        torso = face_view(canvas, "torso", "front")
+        fabric = torso[..., 3] == 255
+        rgb = np.ascontiguousarray(torso[..., :3])
+        clean = clone_fill(rgb, graphic_mask(rgb, fabric), fabric)
+        rear = face_view(canvas, "torso", "back")
+        rear[..., :3] = clean[:, ::-1]
+        rear[..., 3] = torso[:, ::-1, 3]
+    output = BytesIO()
+    Image.fromarray(apply_shading(canvas, shading)).save(output, format="PNG", icc_profile=COLOR_PROFILE.tobytes())
+    return output.getvalue(), front.profile, back is not None
+
+
 async def process_events(
     mode: str, photos: list[tuple[str, bytes]], shading: float = 1.0
 ) -> AsyncIterator[str]:
     try:
         yield event("progress", step="finding", percent=0)
         inspected = []
+        decoded = {}
         for index, (role, data) in enumerate(photos):
-            inspected.append((role, await run_in_threadpool(inspect, data)))
+            if data not in decoded:
+                decoded[data] = await run_in_threadpool(inspect, data)
+            inspected.append((role, decoded[data]))
             yield event("progress", step="finding", percent=20 * (index + 1) // len(photos))
 
         yield event("progress", step="removing", percent=20)
         source_photos = {}
+        cutouts = {}
         for index, (role, image) in enumerate(inspected):
-            png, details = await run_in_threadpool(prepare_cutout, *image, mode)
+            key = id(image[0])
+            if key not in cutouts:
+                cutouts[key] = await run_in_threadpool(available_cutout, *image, mode)
+            png, details = cutouts[key]
             if role in ("front", "back"):
                 source_photos[role] = (png, details)
             yield event("photo", role=role, png=base64.b64encode(png).decode("ascii"), **details)
@@ -121,7 +173,18 @@ async def process_events(
                 back_png, back_details = source_photos["back"]
                 back = shirt_photo(originals["back"], back_png, back_details["photo_type"])
             yield event("progress", step="placing", percent=85)
-            template, profile = await run_in_threadpool(make_core_shirt, front, back, shading)
+            if os.getenv("THREADPORT_CORE_MODEL", "1") == "0":
+                template, profile, has_back = await run_in_threadpool(classical_shirt, source_photos, shading)
+            else:
+                try:
+                    worn_tee = photo_type == "worn" and details["garment_type"] == "t_shirt"
+                    template, profile = await run_in_threadpool(
+                        make_core_shirt, front, back, shading, front_png if worn_tee else None
+                    )
+                    has_back = back is not None
+                except Exception as error:
+                    logger.warning("Shirt core could not render this photo (%s). Trying the classical path.", error)
+                    template, profile, has_back = await run_in_threadpool(classical_shirt, source_photos, shading)
         else:
             front = await run_in_threadpool(
                 segment_parts, front_png, template_mode, details["garment_type"], photo_type=photo_type
@@ -139,7 +202,7 @@ async def process_events(
             yield event("progress", step="placing", percent=85)
             template = await run_in_threadpool(place_template, template_mode, front, back)
             profile = front.profile
-        has_back = back is not None
+            has_back = back is not None
         yield event("progress", step="filling", percent=87)
         candidates = await run_in_threadpool(fill_unseen, template, template_mode, profile, has_back)
         yield event("progress", step="shading", percent=92)
@@ -179,7 +242,7 @@ async def cutout(request: Request):
         raise HTTPException(422, "Add one photo to cut out.")
 
     def prepare():
-        return prepare_cutout(*inspect(photos[0][1]), mode)
+        return available_cutout(*inspect(photos[0][1]), mode)
 
     try:
         png, details = await run_in_threadpool(prepare)

@@ -38,6 +38,33 @@ class PhotoTests(unittest.TestCase):
                         if mode == "pants" and photo_type == "flat_lay":
                             self.assertEqual(alpha.getpixel((166, 470)), 0)
 
+    def test_neutral_corners_recover_a_printed_tee_that_touches_both_sides(self):
+        photo = (SAMPLES / "golden" / "burgundy-print-tee.jpg").read_bytes()
+        png, details = prepare_cutout(*inspect(photo), "auto")
+        self.assertEqual(details["mode"], "shirt")
+        with Image.open(BytesIO(png)) as cutout:
+            alpha = np.asarray(cutout.getchannel("A"))
+            self.assertGreater((alpha > 200).mean(), 0.65)
+            self.assertGreater(alpha[cutout.height // 2, cutout.width // 2], 200)
+            self.assertEqual(alpha[2, 2], 0)
+
+    def test_off_white_letters_enclosed_in_blue_fabric_keep_opaque_pixels(self):
+        photo = (SAMPLES / "golden" / "blue-lettered-tee.jpg").read_bytes()
+        original, *args = inspect(photo)
+        png, _ = prepare_cutout(original, *args, "shirt")
+        rows = slice(original.height // 5, original.height * 11 // 20)
+        cols = slice(original.width // 5, original.width * 4 // 5)
+        print_area = np.asarray(original)[rows, cols, :3].min(axis=2) > 210
+        with Image.open(BytesIO(png)) as cutout:
+            actual = np.asarray(cutout)[rows, cols, 3]
+            self.assertGreater(print_area.sum(), 1000)
+            self.assertGreater((actual[print_area] > 220).mean(), 0.95)
+
+    def test_hanging_jacket_with_sleeve_gaps_is_not_classified_as_pants(self):
+        photo = (SAMPLES / "golden" / "cream-jacket.jpg").read_bytes()
+        _, details = prepare_cutout(*inspect(photo), "auto")
+        self.assertEqual(details["mode"], "shirt")
+
     def test_existing_transparency_and_explicit_mode_are_preserved(self):
         photo = Image.new("RGBA", (100, 120))
         ImageDraw.Draw(photo).rectangle((25, 25, 75, 99), fill=(24, 63, 122, 219))

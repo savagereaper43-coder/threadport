@@ -1,0 +1,28 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    environment:
+      THREADPORT_CORE_MODEL: "${THREADPORT_CORE_MODEL:-1}"
+      THREADPORT_REMBG: "${THREADPORT_REMBG:-0}"
+    volumes:
+      - model-cache:/models
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${THREADPORT_PORT:-8080}:8080"
+
+volumes:
+  model-cache:

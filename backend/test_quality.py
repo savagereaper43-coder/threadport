@@ -2,6 +2,7 @@ import unittest
 from io import BytesIO
 from pathlib import Path
 
+import cv2
 import numpy as np
 from PIL import Image
 
@@ -10,6 +11,7 @@ from backend.photos import prepare_cutout
 from backend.placement import CLASSIC_SIZE, FACES
 from backend.processing import inspect
 from backend.quality import blend_seams, face_view, fill_unseen, finish_images, inspect_quality
+from backend.worn_shirts import recover_worn_template
 
 SAMPLES = Path(__file__).resolve().parents[1] / "samples"
 
@@ -91,3 +93,26 @@ class QualityTests(unittest.TestCase):
         with Image.open(BytesIO(cutout)) as result:
             self.assertEqual(result.getpixel((257, 300))[3], 0)
             self.assertEqual(result.getpixel((168, 355))[3], 255)
+
+
+    def test_worn_tshirt_keeps_both_patterned_sleeves_and_the_wide_print(self):
+        photo = (SAMPLES / "white shirt on body test.JPG").read_bytes()
+        cutout, _ = prepare_cutout(*inspect(photo), "shirt")
+        template = np.zeros((*CLASSIC_SIZE[::-1], 4), np.uint8)
+        recover_worn_template(cutout, 0, template)
+
+        for limb in ("rightLimb", "leftLimb"):
+            sleeve = face_view(template, limb, "front")
+            cloth = sleeve[..., 3] == 255
+            hsv = cv2.cvtColor(sleeve[..., :3], cv2.COLOR_RGB2HSV)
+            blue = (hsv[..., 0] > 96) & (hsv[..., 0] < 132) & (hsv[..., 1] > 60)
+            self.assertGreater(cloth.sum(), 2500)
+            self.assertGreater(blue[cloth].mean(), 0.35)
+            self.assertFalse(sleeve[60:, :, 3].any())
+
+        front = face_view(template, "torso", "front")[0:68]
+        red, green = front[..., 0].astype(int), front[..., 1].astype(int)
+        columns = np.nonzero((red > 110) & (red - green > 40))[1]
+        self.assertGreater(np.ptp(columns), 75)
+        self.assertGreater(columns.min(), 1)
+        self.assertLess(columns.max(), 126)

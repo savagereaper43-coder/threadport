@@ -1,6 +1,6 @@
 # ThreadPort
 
-ThreadPort is being built to turn clothing photos into Roblox Classic Clothing. Auto Bash now removes the background, finds clothing parts, and places the photographed fabric on a Roblox template.
+ThreadPort turns clothing photos into Roblox Classic Clothing. Auto Bash removes the background and places photographed fabric on a template. Use Studio to edit layers and export a transparent PNG.
 
 ## Run locally
 
@@ -26,6 +26,19 @@ U2NET_HOME="$PWD/.threadport-models" OMP_NUM_THREADS=2 \
 
 The Vite development server forwards `/api` to port 8000. To use a different backend address, set `THREADPORT_API_URL` when starting Vite. `GET /health` checks the API, and `GET /template-layout` returns the shared classic-clothing region rectangles.
 
+
+## Run with Docker Compose
+
+With Docker and the Compose plugin installed, run this from the repository root.
+
+```sh
+docker compose up --build
+```
+
+Open http://localhost:8080. Compose runs a production frontend and serves the API under the same address. Set `THREADPORT_PORT` to change the local port. Use `docker compose down` to stop the services. The named model cache survives restarts.
+
+Classic Shirts use the supplied model by default. Allow the first run to download the ISNet weights, or use `THREADPORT_CORE_MODEL=0 docker compose up --build` to use the local, model-free cutout and placement path. In a network with a private CA, Compose can pass a build secret named `registry_ca` to both services. Use a PEM bundle containing the trusted CA certificates.
+
 ## What works now
 
 - In **Auto Bash**, browse, drop, or paste a main photo. You can also add one back photo and up to three angles. The uploader accepts JPG, PNG, and WebP images up to 10 MB and 20 megapixels each.
@@ -45,7 +58,7 @@ The Vite development server forwards `/api` to port 8000. To use a different bac
 - **Export set (ZIP)** includes the current PNG and the matching item, starter, and colorways prepared in that Result session. **Before/after image** saves a comparison of the source and the current template.
 - The **Logo and text check** highlights possible high-contrast artwork on the front or back. You can remove it or replace it with an original PNG. The check uses image contrast and does not identify brands or read text. The **Help center** includes photo examples and export tips.
 
-For the cleanest placement, photograph one whole garment straight-on against a plain background and spread the sleeves or legs so their edges are visible. Worn shirts are isolated on a neutral background before running the supplied core. Worn photos can still lose sleeve patterns or parts of a graphic.
+For the cleanest placement, photograph one whole garment straight-on against a plain background and spread the sleeves or legs so their edges are visible. Auto Bash gives tight crops and worn shirts a neutral matte when needed. It checks large product cutouts against the model output and uses the local placement path if the model misses most of the garment. Worn photos can still lose detail behind folds or arms.
 
 The finishing pass uses patterned fabric where a strong repeat can be detected, matches colors across adjacent faces, and sharpens photographed details gently. Result shows an **Estimated match** and **Show regions** marks uncertain areas in amber. The estimate uses fabric coverage, seam alignment, color, and whether fabric was inferred. Focus a region with Tab or point to it to read its score.
 
@@ -62,11 +75,11 @@ The classic rectangles match the coordinates in `AGENTS.md` and the face sizes i
 | Pan and zoom | Space + drag, scroll |
 | Undo, redo, duplicate layer | Ctrl/Cmd + Z, Ctrl/Cmd + Shift + Z, Ctrl/Cmd + J |
 
-Alt-click the canvas with Clone Stamp to sample fabric, then brush where you want the copy. For a layer mask, use Eraser to hide and Brush to reveal.
+Alt-click the canvas with Clone Stamp to sample fabric, then brush where you want the copy. For a layer mask, use Eraser to hide and Brush to reveal. With the canvas focused, use the arrow keys to move the cursor and Enter to use the selected tool. Hold Shift to move farther. Use Shift + Enter to start a brush stroke, then Enter to finish.
 
 ### Clothing models
 
-The first Classic Shirt request downloads and verifies the core engine's ISNet weights (about 179 MB) in the writable model cache. Later requests use the cached weights. The app uses its existing GrabCut path to classify uploads and show cutout previews by default. Set `THREADPORT_REMBG=1` when starting the API if you also want the separate rembg clothing model for that preliminary step.
+The first Classic Shirt request downloads and verifies the core engine's ISNet weights (about 179 MB) in the writable model cache. Later requests use the cached weights. The app uses GrabCut to classify uploads and show cutout previews by default. It can retry a difficult cutout with ISNet and can render a shirt with local placement if the model fails. Set `THREADPORT_CORE_MODEL=0` to use local placement directly. Set `THREADPORT_REMBG=1` when starting the API if you also want the separate rembg clothing model for that preliminary step.
 
 ### Processing API
 
@@ -91,14 +104,22 @@ npm run build
 
 With Chromium already installed, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to its path when running `npm test`. Playwright starts its own frontend on port 4173 and API on port 8001. The backend tests cover cutouts, placement, and Quick-Fix edits. Browser tests cover uploads, cancellation, both avatar views, Quick-Fix, catalog copy buttons, PNG downloads, Studio painting and masks, IndexedDB reload, photo cutting and wrapping, the Auto Bash handoff, batch review, colorways, matching sets, and downloadable ZIPs.
 
-Rebuild the review PNGs through the same placement pipeline as Auto Bash.
+
+## Sample review
+
+The [golden review](samples/out/report.md) includes all 30 source photos, nine manual ratings for each rendered template, and links to the full-size PNGs. The [source and license list](samples/golden/SOURCES.md) covers the 26 Wikimedia Commons additions. Garment placement for a single flat-lay or product photo is the primary Auto Bash workflow. Folded garments, layered outfits, busy backgrounds, and photos with covered fabric can still need manual placement in Studio.
+
+Run the same pipeline used by the web app.
 
 ```sh
-U2NET_HOME="$PWD/.threadport-models" OMP_NUM_THREADS=2 .venv/bin/python -m backend.run_samples --review
+U2NET_HOME="$PWD/.threadport-models" OMP_NUM_THREADS=2 .venv/bin/python -m backend.run_samples \
+  --output /tmp/threadport-review --review --summary /tmp/threadport-review/render-summary.json
 ```
 
-The review command saves the original template PNGs and enlarged checkerboard copies. See both in the [visual review](samples/out/report.md).
+The command saves native template PNGs, enlarged checkerboard copies, and optional render diagnostics. It returns a nonzero status if any input fails. The recorded visual grades are separate from the in-app confidence percentages.
 
-## Next
+## Stage 8 verification
 
-Stage 8 covers the wider sample review and final polish. Worn-shirt patterns and seams between repeated patches remain open.
+The production build loads Auto Bash, Studio, and Help separately. Importing just the Konva core and image shape reduced Result’s JavaScript chunk from about 355 kB to 272 kB before compression. The keyboard flow and automated accessibility checks cover the primary screens and the colorways dialog.
+
+The quality gate remains open. The report records sleeve classification, repeat alignment, rear-only photos, folded garments, and worn-photo selection cases that need more work before all 30 photos meet the 4/5 target.

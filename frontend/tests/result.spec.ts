@@ -57,7 +57,7 @@ test('edits a real shirt, previews both sides, copies catalog text and exports t
     const entry = catalog.locator('dl > div').filter({ has: page.getByText(label, { exact: true }) })
     await entry.getByRole('button', { name: `Copy ${label.toLowerCase()}` }).click()
     await expect(catalog.getByRole('status')).toHaveText(`${label} copied.`)
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(await entry.locator('dd').innerText())
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(await entry.locator('.catalog-value').innerText())
   }
   await expect(catalog.getByRole('link', { name: 'Roblox Creator Hub' })).toHaveAttribute('href', /create\.roblox\.com/)
 

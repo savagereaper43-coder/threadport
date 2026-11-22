@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Image as CanvasImage, Layer, Stage } from 'react-konva'
+import { Image as CanvasImage, Layer, Stage } from 'react-konva/lib/ReactKonvaCore'
+import 'konva/lib/shapes/Image'
 import { usePhotoUrl } from './PhotoUpload'
 import { downloadResult, imagePixels, palette, useTemplateImage } from './resultImage'
 import { CatalogChecklist, FixPanel, Mannequins } from './ResultTools'

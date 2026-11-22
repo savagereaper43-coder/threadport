@@ -15,6 +15,7 @@ from .garment_parts import crop_silhouette, fitted_top
 from .placement import FACES, LIMBS, limb_textures, place_template
 from .photos import COLOR_PROFILE, PhotoError
 from .quality import face_view, rgba
+from .shirt_wrap import continue_fabric
 from .worn_shirts import recover_worn_template
 
 # The engine loads a shared rembg session lazily. Serialize shirt renders
@@ -122,6 +123,11 @@ def make_core_shirt(front: ShirtPhoto, back: ShirtPhoto | None, shading: float,
         profile = "t_shirt"
     elif fit_product and "mask" in debug:
         profile = fit_product_shape(image, debug["mask"], template, profile, shading, back is not None)
+    landmarks = debug["lm"]
+    if fit_product and back is None and profile != "sleeveless" and "mask" in debug and "scale" in landmarks:
+        continue_fabric(template, np.asarray(image.convert("RGBA")), debug["mask"],
+                        left=landmarks["x0"] + 2, top=landmarks["front_top"],
+                        scale=landmarks["scale"], shading=shading)
     png = BytesIO()
     Image.fromarray(template).save(png, format="PNG", icc_profile=COLOR_PROFILE.tobytes())
     return png.getvalue(), profile

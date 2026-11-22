@@ -33,14 +33,20 @@ class ShirtEngineTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(front.tobytes(), back.tobytes())
             self.assertEqual(shading, 0.4)
             paths.extend((front_path, back_path))
-            return template, {"lm": {"arms": {"rarm": {"long": True}, "larm": {"long": True}}}}
+            return template, {
+                "mask": np.ones((373, 352), dtype=bool),
+                "lm": {"arms": {"rarm": {"long": True}, "larm": {"long": True}},
+                       "x0": 50, "front_top": 40, "scale": 0.65},
+            }
 
-        with patch.object(autobash, "make_shirt", side_effect=render) as supplied_engine:
+        with (patch.object(autobash, "make_shirt", side_effect=render) as supplied_engine,
+              patch("backend.shirt_engine.continue_fabric") as inferred_wrap):
             events = [json.loads(line) async for line in process_events(
                 "auto", [("front", photo), ("back", photo)], shading=0.4
             )]
 
         supplied_engine.assert_called_once()
+        inferred_wrap.assert_not_called()
         self.assertTrue(all(not path.exists() for path in paths))
         self.assertEqual(events[-1]["type"], "result", events[-1])
         payload = events[-1]["template"]

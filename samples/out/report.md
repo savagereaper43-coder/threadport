@@ -2,7 +2,7 @@
 
 Auto Bash attempted all 30 photos through the same pipeline as the web app and returned a template for each. **3 of 30** reached at least 4/5 on all nine criteria. **The quality gate remains open.**
 
-The first pass returned 24 templates and the previous published pass returned 29. The fitted denim skirt now renders, the striped tank keeps its arm faces transparent, and visible cuffs are retained on several long-sleeve tops. The earlier blue tee lettering, patterned worn shirt sleeves, and full-length denim leg outputs are still included.
+The first pass returned 24 templates and skirt placement brought the total to 30. This pass restores repeating motifs on the inferred torso panels of the pink button-up and the Fair Isle sweater. The repair uses photographed fabric at the same scale, keeps the main front design in place, and repairs streaked short sleeves where the source shows enough sleeve fabric.
 
 The scores below are visual judgments on a 1–5 scale. The in-app estimate is a separate automated confidence score. The review uses the four original inputs and 26 [attributed Wikimedia Commons photos](../golden/SOURCES.md), with single garments prioritized.
 
@@ -21,12 +21,12 @@ The scores below are visual judgments on a 1–5 scale. The in-app estimate is a
 | [cream-jacket](../golden/cream-jacket.jpg) · [PNG](cream-jacket.png) | 2 | 2 | 3 | 2 | 2 | 3 | 3 | 3 | 2 | 75% | The jacket stays a top. Arm length and copied tags need work. |
 | [dark-folded-hoodie](../golden/dark-folded-hoodie.jpg) · [PNG](dark-folded-hoodie.png) | 2 | 2 | 2 | 2 | 2 | 3 | 2 | 3 | 2 | 81% | The folded front twists the lettering. The folds and concealed sleeves limit placement. |
 | [denim-skirt](../golden/denim-skirt.jpg) · [PNG](denim-skirt.png) | 3 | 3 | 3 | 3 | 3 | 3 | 4 | 4 | 3 | 81% | The waistband, fly and denim hem read. The two leg fronts share the source panel, with the skirt slit approximated by the avatar geometry. |
-| [fair-isle-sweater](../golden/fair-isle-sweater.jpg) · [PNG](fair-isle-sweater.png) | 2 | 2 | 3 | 2 | 2 | 3 | 3 | 4 | 2 | 70% | The knit colors are visible. The folded sleeve is shortened and the stripes break across joins. |
+| [fair-isle-sweater](../golden/fair-isle-sweater.jpg) · [PNG](fair-isle-sweater.png) | 2 | 2 | 3 | 3 | 3 | 3 | 3 | 4 | 3 | 67% | The knit bands now remain visible across the sides and back. The folded sleeve still limits placement. |
 | [folded-denim](../golden/folded-denim.jpg) · [PNG](folded-denim.png) | 1 | 1 | 3 | 2 | 2 | 3 | 2 | 3 | 1 | 80% | The folded jeans are mistaken for a shirt. Neither full leg is visible. |
 | [gray-snap-shirt](../golden/gray-snap-shirt.jpg) · [PNG](gray-snap-shirt.png) | 2 | 2 | 3 | 2 | 2 | 3 | 3 | 3 | 2 | 78% | Central buttons remain. The arms are shortened and the side joins pick up background. |
 | [green-knit](../golden/green-knit.jpg) · [PNG](green-knit.png) | 2 | 3 | 3 | 3 | 3 | 3 | 3 | 4 | 2 | 78% | Both cuffs and sleeve patterns are visible. The photographed rear sits on the front and the inferred panel still repeats knit lines. |
 | [navy-shirt-back](../golden/navy-shirt-back.jpg) · [PNG](navy-shirt-back.png) | 2 | 3 | 4 | 3 | 3 | 3 | 2 | 4 | 2 | 81% | The rear-only view becomes the front. The sleeves are shortened. |
-| [pink-print-button-up](../golden/pink-print-button-up.jpg) · [PNG](pink-print-button-up.png) | 3 | 3 | 3 | 2 | 2 | 3 | 3 | 4 | 2 | 67% | The front pattern and color survive. Side and arm bands turn the print into visible streaks. |
+| [pink-print-button-up](../golden/pink-print-button-up.jpg) · [PNG](pink-print-button-up.png) | 3 | 3 | 3 | 3 | 3 | 3 | 4 | 4 | 3 | 64% | Whole motifs replace side and back streaks. Both short sleeves use printed fabric and some mirrored joins remain visible. |
 | [plaid-button-up](../golden/plaid-button-up.jpg) · [PNG](plaid-button-up.png) | 2 | 2 | 3 | 2 | 2 | 3 | 3 | 3 | 2 | 55% | The collar and front checks are recognizable. Side and sleeve checks do not align. |
 | [raw-denim-jeans](../golden/raw-denim-jeans.jpg) · [PNG](raw-denim-jeans.png) | 4 | 4 | 4 | 4 | 4 | 4 | 4 | 4 | 4 | 80% | The waist and full-length dark legs are clear. The quieter denim wraps consistently. |
 | [red-puffer](../golden/red-puffer.jpg) · [PNG](red-puffer.png) | 3 | 3 | 3 | 3 | 3 | 3 | 3 | 4 | 2 | 80% | The arms reach the cuffs and the zipper is visible. Copied quilting on the upper caps remains apparent. |
@@ -41,11 +41,11 @@ The scores below are visual judgments on a 1–5 scale. The in-app estimate is a
 | [worn-checkered-pants](../golden/worn-checkered-pants.jpg) · [PNG](worn-checkered-pants.png) | 1 | 1 | 1 | 2 | 2 | 2 | 1 | 2 | 1 | 76% | Auto picks shirt mode, keeping trouser fabric in torso and arm panels. |
 | [white-shirt-on-body-test](../white%20shirt%20on%20body%20test.JPG) · [PNG](white-shirt-on-body-test.png) | 3 | 3 | 3 | 3 | 3 | 3 | 4 | 4 | 3 | 47% | Both patterned sleeves and the full photographed print are visible. Small sleeve fragments remain at the torso edge. |
 
-16 outputs still score below 3 on placement, edges, or seams. Folded jeans and worn checkered pants still land in shirt mode. Rear-only photos, obscured clothes, hood placement, and joins in patterned fabric continue to need work.
+15 outputs still score below 3 on placement, edges, or seams. Folded jeans and worn checkered pants still land in shirt mode. Photos showing the back, obscured clothes, hood placement, and joins in difficult patterns continue to need work.
 
 ## Visual review
 
-Each sheet pairs the source photo with the rendered template. Use the PNG link in the table for the native-size export. See enlarged previews of the [denim skirt](review/denim-skirt.jpg), [striped tank](review/striped-tank.jpg), and [long-sleeve red sweater](review/red-sweater.jpg).
+Each sheet pairs the source photo with the rendered template. Use the PNG link in the table for the native-size export. See enlarged previews of the [pink button-up](review/pink-print-button-up.jpg), [Fair Isle sweater](review/fair-isle-sweater.jpg), and [denim skirt](review/denim-skirt.jpg).
 
 ![Sample review sheet 1 with six paired source and template previews](review/stage-8-board-1.jpg)
 

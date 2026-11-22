@@ -5,8 +5,13 @@ import { PhotoUpload, usePhotoUrl } from './PhotoUpload'
 import { processPhotos } from './photos'
 import type { Mode, PhotoSelection, ProcessResult, Progress } from './photos'
 import type { Project } from './studio/model'
+import { BatchMode, useBatch } from './extras/BatchMode'
+import type { ReadyEntry } from './extras/BatchMode'
+import { TemplateUpload } from './extras/TemplateUpload'
+import { StarterUpload } from './extras/StarterUpload'
 
 const TemplateResult = lazy(() => import('./TemplateResult'))
+const noAngles: File[] = []
 
 const checklist = [
   'Finding the clothing…',
@@ -86,6 +91,10 @@ export function AutoBash({ onStepChange, openStudio }: { onStepChange: (step: Au
   const [progress, setProgress] = useState<Progress | null>(null)
   const [result, setResult] = useState<ProcessResult | null>(null)
   const job = useRef<AbortController | null>(null)
+  const [batchMode, setBatchMode] = useState(false)
+  const [review, setReview] = useState<ReadyEntry>()
+  const [imported, setImported] = useState<{ file: File; result: ProcessResult }>()
+  const batch = useBatch()
 
   useEffect(() => () => job.current?.abort(), [])
 
@@ -124,6 +133,23 @@ export function AutoBash({ onStepChange, openStudio }: { onStepChange: (step: Au
     }
   }
 
+  if (review || imported) {
+    const current = (review ?? imported)!
+    return (
+      <Suspense fallback={<p role="status">Opening template preview…</p>}>
+        <TemplateResult original={current.file} selection={{ front: current.file, back: null, angles: noAngles }}
+          mode={review?.mode ?? current.result.template.mode} result={current.result} imported={!!imported}
+          backLabel={review ? 'Back to batch' : 'Back to upload'} openStudio={openStudio}
+          onBack={(png) => {
+            if (review) batch.saveReview(review.id, png)
+            setReview(undefined)
+            setImported(undefined)
+            onStepChange('Upload')
+          }} />
+      </Suspense>
+    )
+  }
+
   if (result && photos.front) {
     return (
       <Suspense fallback={<p role="status">Opening template preview…</p>}>
@@ -137,16 +163,24 @@ export function AutoBash({ onStepChange, openStudio }: { onStepChange: (step: Au
 
   return (
     <div className="upload-page">
-      <div className="page-heading"><h1>Auto Bash</h1></div>
-      <PhotoUpload
-        photos={photos}
-        onPhotosChange={setPhotos}
-        mode={mode}
-        onModeChange={setMode}
-        onSubmit={submit}
-        error={error}
-        onError={setError}
-      />
+      <div className="page-heading upload-heading">
+        <h1>Auto Bash</h1>
+        <button className="secondary-button" type="button" aria-pressed={batchMode}
+          onClick={() => setBatchMode(!batchMode)}>{batchMode ? 'Single photo' : 'Batch mode'}</button>
+      </div>
+      {batchMode ? <BatchMode batch={batch} review={(entry) => { setReview(entry); onStepChange('Result') }} /> : <>
+        <PhotoUpload
+          photos={photos}
+          onPhotosChange={setPhotos}
+          mode={mode}
+          onModeChange={setMode}
+          onSubmit={submit}
+          error={error}
+          onError={setError}
+        />
+        <TemplateUpload ready={(file, preview) => { setImported({ file, result: preview }); onStepChange('Result') }} />
+        <StarterUpload openStudio={openStudio} />
+      </>}
     </div>
   )
 }

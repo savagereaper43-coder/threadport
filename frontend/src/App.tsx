@@ -4,12 +4,13 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { AutoBash } from './AutoBash'
 import type { AutoBashStep } from './AutoBash'
 import { Home, Projects } from './studio/Projects'
+import { HelpCenter } from './extras/HelpCenter'
 import { deleteProject, id, loadProjects, newProject, saveProject } from './studio/model'
 import type { Project } from './studio/model'
 import type { TemplateKind } from './template'
 
 const StudioEditor = lazy(() => import('./studio/StudioEditor'))
-const routes = { Home: '', 'Auto Bash': '#auto-bash', Studio: '#studio', 'My Projects': '#projects' }
+const routes = { Home: '', 'Auto Bash': '#auto-bash', Studio: '#studio', 'My Projects': '#projects', 'Help center': '#help' }
 type View = keyof typeof routes
 const modes = ['Auto Bash', 'Studio'] as const
 const steps = ['Upload', 'Processing', 'Result']
@@ -142,10 +143,14 @@ export function App() {
         <StudioEditor key={activeProject.id} project={activeProject} change={changeProject} openProject={openProject}
           createProject={create} saving={pending ? 'Saving…' : cards.some((item) => item.id === activeProject.id) && !storageError ? 'Saved' : ''} />
       </Suspense>}
+      {view === 'Help center' && <HelpCenter />}
       {view === 'My Projects' && <Projects projects={cards} open={openProject}
         duplicate={(project) => write({ ...project, id: id(), name: `${project.name} copy`, updated: Date.now() })}
         remove={remove} move={(project, folder) => write({ ...project, folder, updated: Date.now() })}
         create={() => create('shirt')} />}
     </motion.main>
+    <footer className="app-footer">
+      <a href="#help" aria-current={view === 'Help center' ? 'page' : undefined}>Help center</a>
+    </footer>
   </>
 }

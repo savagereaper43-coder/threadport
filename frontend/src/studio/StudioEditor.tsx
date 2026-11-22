@@ -1,6 +1,7 @@
 import { Download, Image, Redo2, Undo2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { CatalogChecklist, Mannequins } from '../ResultTools'
+import { importPreview } from '../extras/artwork'
 import { imagePixels, palette } from '../resultImage'
 import { exportTemplatePng, templates } from '../template'
 import type { TemplateKind } from '../template'
@@ -14,7 +15,7 @@ import { PhotoTray } from './PhotoTray'
 import { StudioCanvas, fitFrame } from './StudioCanvas'
 import { StudioPanels, ToolOptions } from './StudioPanels'
 import {
-  applySelection, composite, controlPoints, crop, download, fileUrl, fitPiece, importTemplate, loadImage, localOffset, mapToLayer, pngUrl,
+  applySelection, composite, controlPoints, crop, download, fitPiece, importTemplate, loadImage, localOffset, mapToLayer, pngUrl,
   surface, wrapPiece,
 } from './raster'
 
@@ -390,15 +391,8 @@ export default function StudioEditor({ project, change, openProject, createProje
 
   function importPng(file: File) {
     void perform(async () => {
-      if (file.size > 10 * 1024 * 1024) throw new Error('Choose a template PNG up to 10 MB.')
-      const signature = new Uint8Array(await file.slice(0, 8).arrayBuffer())
-      if (![137, 80, 78, 71, 13, 10, 26, 10].every((value, index) => signature[index] === value)) {
-        throw new Error('Choose a Roblox template PNG.')
-      }
-      const src = await fileUrl(file)
-      const { width: w } = await loadImage(src)
-      const kind = w === 512 ? 't-shirt' : project.kind === 'pants' ? 'pants' : 'shirt'
-      openProject(await importTemplate(src, kind, file.name.replace(/\.png$/i, '')))
+      const { png, mode } = await importPreview(file, project.kind === 'pants' ? 'pants' : 'shirt')
+      openProject(await importTemplate(pngUrl(png), mode, file.name.replace(/\.png$/i, '')))
     })
   }
 

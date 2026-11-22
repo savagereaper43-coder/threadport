@@ -28,11 +28,12 @@ function Slider({ label, value, onChange, min = -100 }: {
   )
 }
 
-export function FixPanel({ tools, palette, download, ready }: {
+export function FixPanel({ tools, palette, download, ready, canPlace }: {
   tools: ReturnType<typeof useResultEdits>
   palette: string[]
   download: () => void
   ready: boolean
+  canPlace: boolean
 }) {
   const { fixes, update, template } = tools
   const [colorSource, setColorSource] = useState<string>()
@@ -43,7 +44,7 @@ export function FixPanel({ tools, palette, download, ready }: {
     <section className="panel controls result-details" aria-labelledby="quick-fix-title">
       <h2 id="quick-fix-title">Quick-Fix</h2>
       <div className="fix-group">
-        {classic && <Slider label="Shading strength" value={tools.shading} onChange={tools.setShading} min={0} />}
+        {classic && canPlace && <Slider label="Shading strength" value={tools.shading} onChange={tools.setShading} min={0} />}
         <Slider label="Sharpness" value={fixes.sharpness} onChange={(value) => update('sharpness', value)} />
         <Slider label="Brightness" value={fixes.brightness} onChange={(value) => update('brightness', value)} />
         <Slider label="Saturation" value={fixes.saturation} onChange={(value) => update('saturation', value)} />
@@ -106,9 +107,9 @@ export function FixPanel({ tools, palette, download, ready }: {
         </label>
       </div>
       <div className="fix-group">
-        <button className="secondary-button fix-action" type="button" onClick={tools.rerun}>
+        {canPlace && <button className="secondary-button fix-action" type="button" onClick={tools.rerun}>
           <RotateCcw size={14} aria-hidden="true" /> Re-run auto placement
-        </button>
+        </button>}
         <button className="text-button fix-action" type="button" onClick={tools.reset}>Reset adjustments</button>
         {error ? (
           <>

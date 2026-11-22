@@ -9,7 +9,7 @@ from PIL import Image, ImageCms
 
 from backend.placement import CLASSIC_SIZE, FACES, LIMBS, SIDES, TSHIRT_SIZE
 from backend.quality import face_view
-from backend.quick_fix import Fixes, FixRequest, edit_png
+from backend.quick_fix import Fixes, FixRequest, TemplateRequest, edit_png, find_graphics
 
 
 def patterned_template():
@@ -109,6 +109,25 @@ class QuickFixTests(unittest.TestCase):
                 original = face_view(before, part, side)
                 modified = face_view(after, part, side)
                 np.testing.assert_array_equal(modified[original[..., 3] > 0], original[original[..., 3] > 0])
+
+    def test_graphic_check_finds_back_lettering_and_removal_preserves_the_front(self):
+        base = patterned_template()
+        back = face_view(base, "torso", "back")
+        back[30:41, 42:89, :3] = (251, 247, 244)
+        back[42:60, 60:69, :3] = (251, 247, 244)
+        png = encode(base)
+        matches = find_graphics(TemplateRequest(png=png, mode="shirt"))
+        self.assertEqual([match["side"] for match in matches], ["back"])
+        x, y, _, _ = FACES["torso", "back"]
+        hit, = matches
+        self.assertLessEqual(hit["x"], x + 62)
+        self.assertLessEqual(hit["y"], y + 39)
+        self.assertGreater(hit["x"] + hit["w"], x + 62)
+        self.assertGreater(hit["y"] + hit["h"], y + 39)
+        changed, _ = apply(png, remove_logo=True, logo_face="back")
+        np.testing.assert_array_equal(changed[..., 3], base[..., 3])
+        np.testing.assert_array_equal(face_view(changed, "torso", "front"), face_view(base, "torso", "front"))
+        self.assertFalse(np.array_equal(face_view(changed, "torso", "back"), back))
 
     def test_square_graphic_keeps_its_alpha_and_classic_dimensions_are_rejected(self):
         graphic = np.zeros((*TSHIRT_SIZE[::-1], 4), dtype=np.uint8)

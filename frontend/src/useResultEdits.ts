@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { processPhotos } from './photos'
+import { changeArtwork } from './extras/artwork'
 import type { Mode, PhotoSelection, ProcessResult } from './photos'
 
 export type Fixes = {
@@ -33,7 +34,8 @@ export function useResultEdits(initial: ProcessResult, selection: PhotoSelection
   const { result } = placement
   const alternate = result.template.alternate
   const template = useAlternate && alternate ? { ...result.template, ...alternate } : result.template
-  const base = template.png
+  const [replacement, setReplacement] = useState<{ base: string; png: string }>()
+  const base = replacement?.base === template.png ? replacement.png : template.png
   const kind = template.mode
   const settings = JSON.stringify(fixes)
   const isEdited = settings !== JSON.stringify(defaults)
@@ -59,7 +61,7 @@ export function useResultEdits(initial: ProcessResult, selection: PhotoSelection
             strength: shading,
             version: placementRun,
           }))
-          if (rerun) setAlternate(false)
+          if (rerun) { setAlternate(false); setReplacement(undefined) }
         }
       } catch (error) {
         if (!controller.signal.aborted) {
@@ -75,17 +77,8 @@ export function useResultEdits(initial: ProcessResult, selection: PhotoSelection
     const controller = new AbortController()
     const timer = window.setTimeout(async () => {
       try {
-        const response = await fetch('/api/quick-fix', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: controller.signal,
-          body: JSON.stringify({ png: base, mode: kind, fixes: JSON.parse(settings) }),
-        })
-        const value = await response.json()
-        if (!response.ok || typeof value.png !== 'string') {
-          throw new Error(typeof value.detail === 'string' ? value.detail : 'Couldn’t apply Quick-Fix. Try again.')
-        }
-        if (!controller.signal.aborted) setEdited({ base, settings, png: value.png })
+        const png = await changeArtwork(base, kind, JSON.parse(settings), controller.signal)
+        if (!controller.signal.aborted) setEdited({ base, settings, png })
       } catch (error) {
         if (!controller.signal.aborted) {
           setEditError(error instanceof Error ? error.message : 'Couldn’t apply Quick-Fix. Try again.')
@@ -101,7 +94,13 @@ export function useResultEdits(initial: ProcessResult, selection: PhotoSelection
   }
 
   return {
-    photos: result.photos, template, fixes, update, shading,
+    photos: result.photos, template, base, fixes, update, shading,
+    replaceArtwork: (png: string) => {
+      setFixes(defaults)
+      setEdited(undefined)
+      setEditError('')
+      setReplacement({ base: template.png, png })
+    },
     setShading: (strength: number) => { setRenderError(''); setEditError(''); setShading(strength) },
     rerun: () => { setRenderError(''); setEditError(''); setPlacementRun((version) => version + 1) },
     retry: () => { setEditError(''); setEditRetry((count) => count + 1) },

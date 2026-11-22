@@ -23,9 +23,11 @@ const photoTypes: Record<string, string> = {
 const profiles = {
   t_shirt: 'Short-sleeve top',
   long_sleeve: 'Long-sleeve top',
+  sleeveless: 'Sleeveless top',
   hoodie: 'Hoodie',
   pants: 'Pants',
   shorts: 'Shorts',
+  skirt: 'Skirt',
 }
 
 function GeneratedTemplate({ template, image, showRegions }: {

@@ -139,7 +139,7 @@ def finish_images(images: list[np.ndarray], mode: str, profile: str, shading: fl
         # Bound the enhancement so compression noise does not dominate real stitching.
         detail = np.clip((rgb - soft) * 0.18, -4, 4) * opaque
         image[..., :3] = np.where(opaque > 0, np.rint(np.clip(rgb * gains + detail, 0, 255)), rgb)
-        if mode == "pants" and shading > 0:
+        if mode == "pants" and profile != "skirt" and shading > 0:
             for side in ("front", "back"):
                 tint_art(face_view(image, "torso", side), art("pants-waist"), 0.68 * shading)
             height = round(128 * RULES["profiles"][profile]["limb_height"])
@@ -170,14 +170,15 @@ def inspect_quality(image: np.ndarray, mode: str, profile: str, photo_type: str,
         mismatch[a].append(delta)
         mismatch[b].append(delta)
     notes = {}
+    limb_fraction = RULES["profiles"][profile]["limb_height"]
     for (part, face), gaps in mismatch.items():
         current = face_view(image, part, face)
-        short = part in LIMBS and profile in ("t_shirt", "shorts")
-        if short and face == "down":
+        limb = part in LIMBS
+        if limb and (limb_fraction == 0 or (limb_fraction < 1 and face == "down")):
             continue
         expected = 0.77 if part == "torso" and face == "up" and mode == "shirt" else 1
-        if short and face in SIDES:
-            expected = RULES["profiles"][profile]["limb_height"]
+        if limb and face in SIDES:
+            expected = limb_fraction
         coverage = min(1., float((current[..., 3] > 200).mean()) / expected)
         gap = float(np.mean(gaps)) if gaps else 0
         fabric = current[::3, ::3]

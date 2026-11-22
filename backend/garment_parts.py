@@ -39,7 +39,11 @@ class GarmentParts:
 def silhouette(png: bytes) -> tuple[np.ndarray, np.ndarray]:
     with Image.open(BytesIO(png)) as photo:
         rgba = np.array(photo.convert("RGBA"))
-    mask = largest_component(rgba[:, :, 3] >= 192)
+    return crop_silhouette(rgba, rgba[..., 3] >= 192)
+
+
+def crop_silhouette(rgba: np.ndarray, mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    mask = largest_component(mask)
     mask = cv2.erode(mask.astype(np.uint8), np.ones((3, 3), np.uint8)).astype(bool)
     rgba[~mask] = 0
     rgba[:, :, 3][mask] = 255
@@ -70,10 +74,13 @@ def body_rows(mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 
 def span(left: np.ndarray, right: np.ndarray, start: int, end: int) -> tuple[float, float]:
-    return float(np.nanmedian(left[start:end])), float(np.nanmedian(right[start:end]))
+    valid = np.isfinite(left[start:end]) & np.isfinite(right[start:end])
+    if not valid.any():
+        return np.nan, np.nan
+    return float(np.median(left[start:end][valid])), float(np.median(right[start:end][valid]))
 
 
-def leg_piece(mask: np.ndarray) -> Piece:
+def lengthwise_piece(mask: np.ndarray) -> Piece:
     ys, xs = np.nonzero(mask)
     if len(ys) < MIN_PANEL_PIXELS ** 2:
         raise PhotoError("Spread the pants flat so both legs are visible.")
@@ -111,6 +118,17 @@ def paired_legs(mask: np.ndarray) -> tuple[int, int]:
 
 def bottom_parts(rgba: np.ndarray, mask: np.ndarray, profile: str, back: bool, worn: bool) -> GarmentParts:
     height, width = mask.shape
+    if profile == "skirt":
+        left, right = profile_rows(mask)
+        waist_end = height * 30 // 100
+        l, r = span(left, right, height // 7, waist_end)
+        split = round((l + r) / 2)
+        columns = np.arange(width)[None, :]
+        lower = mask & (np.arange(height)[:, None] >= waist_end)
+        sides = (lower & (columns < split), lower & (columns >= split))
+        limbs = ("leftLimb", "rightLimb") if back else ("rightLimb", "leftLimb")
+        return GarmentParts(profile, rgba, (l, 0, r, waist_end),
+                            {limb: Piece(piece) for limb, piece in zip(limbs, sides)})
     crotch, split = paired_legs(mask)
     left, right = profile_rows(mask)
     waist = np.flatnonzero(mask[:crotch].sum(axis=1) >= width * 0.32)
@@ -129,7 +147,7 @@ def bottom_parts(rgba: np.ndarray, mask: np.ndarray, profile: str, back: bool, w
     for side in (slice(None, split), slice(split, None)):
         piece = np.zeros_like(mask)
         piece[hem:, side] = mask[hem:, side]
-        limbs.append(leg_piece(largest_component(piece)))
+        limbs.append(lengthwise_piece(largest_component(piece)))
     if back:
         limbs.reverse()
     return GarmentParts(profile, rgba, body, dict(zip(("rightLimb", "leftLimb"), limbs)))
@@ -160,9 +178,77 @@ def distinguish_sleeve(rgba: np.ndarray, sleeve: np.ndarray, screen_left: bool) 
     return trimmed if trimmed.sum() >= max(100, sleeve.sum() * 0.18) else sleeve
 
 
+def fitted_top(rgba: np.ndarray, mask: np.ndarray, back: bool = False) -> GarmentParts | None:
+    """Identify exposed long sleeves or straps from the silhouette's openings."""
+    height, width = mask.shape
+    outer_left, outer_right = profile_rows(mask)
+    inner_left, inner_right = body_rows(mask)
+    center_width = inner_right - inner_left + 1
+    column = np.arange(width)[None, :]
+    row = np.arange(height)[:, None]
+
+    sleeve_edges = []
+    for inside, outside in ((inner_left, outer_left), (inner_right, outer_right)):
+        # A hang-down sleeve creates a second foreground run outside the
+        # torso below the elbow, even if the shoulder is one connected shape.
+        distance = np.abs(outside - inside)
+        band = (column > np.minimum(inside, outside)[:, None]) & (column < np.maximum(inside, outside)[:, None])
+        sleeve_width = (band & mask).sum(axis=1)
+        evidence = ((center_width >= width * 0.34) & (distance - sleeve_width >= width * 0.018)
+                    & (sleeve_width >= width * 0.058))
+        evidence[:height * 45 // 100] = False
+        evidence[height * 92 // 100:] = False
+        if evidence.sum() < max(5, height * 0.075) or not evidence[height * 64 // 100:].any():
+            break
+        sleeve_edges.append(float(np.median(inside[evidence])))
+
+    if len(sleeve_edges) == 2:
+        left, right = sleeve_edges
+        if right - left < width * 0.36:
+            return None
+        center = mask[:, round(left):round(right) + 1].mean(axis=1)
+        body_rows_found = np.flatnonzero(center >= 0.76)
+        if not len(body_rows_found) or body_rows_found[0] > height * 0.36:
+            return None
+        top, bottom = int(body_rows_found[0]), int(body_rows_found[-1])
+        pieces = {}
+        limbs = ("leftLimb", "rightLimb") if back else ("rightLimb", "leftLimb")
+        for limb, side in zip(limbs, (column < left, column > right)):
+            sleeve = largest_component(mask & side & (row >= top))
+            if sleeve.sum() < width * height * 0.025:
+                return None
+            pieces[limb] = lengthwise_piece(sleeve)
+        profile = "long_sleeve"
+        if top > height * 0.14 and mask[:top // 2].mean() < 0.35:
+            profile = "hoodie"
+            pieces["hood"] = Piece(mask & (row < top))
+        return GarmentParts(profile, rgba, (left, top, right, bottom), pieces)
+
+    widths = outer_right - outer_left + 1
+    shoulder = widths[height * 9 // 100:height * 36 // 100]
+    waist = widths[height * 60 // 100:height * 86 // 100]
+    left, right = span(outer_left, outer_right, height * 60 // 100, height * 86 // 100)
+    # Straps rise on both sides of a low neckline while the shoulders stay
+    # narrower than the lower garment. An ordinary tee widens at the sleeves.
+    strap_band = mask[height * 4 // 100:height * 14 // 100]
+    strap_rows = ((strap_band[:, width // 8:width * 3 // 8].mean(axis=1) >= 0.18)
+                  & (strap_band[:, width * 5 // 8:-max(1, width // 8)].mean(axis=1) >= 0.18)
+                  & (strap_band[:, width * 4 // 10:width * 6 // 10].mean(axis=1) < 0.30))
+    shoulder = shoulder[np.isfinite(shoulder)]
+    waist = waist[np.isfinite(waist)]
+    if (not strap_rows.size or strap_rows.mean() < 0.55 or not len(shoulder) or not len(waist)
+            or np.percentile(shoulder, 80) >= np.median(waist) * 0.93):
+        return None
+    return GarmentParts("sleeveless", rgba, (left, 0, right, height - 1), {})
+
+
 def top_parts(rgba: np.ndarray, mask: np.ndarray, profile: str | None, back: bool,
               flat_tshirt: bool) -> GarmentParts:
     height, width = mask.shape
+    if profile in (None, "long_sleeve", "hoodie", "sleeveless") and not flat_tshirt:
+        fitted = fitted_top(rgba, mask, back)
+        if fitted is not None and profile in (None, fitted.profile):
+            return fitted
     body_left, body_right = body_rows(mask)
     waist_l, waist_r = span(body_left, body_right, height * 53 // 100, height * 76 // 100)
     hem_l, hem_r = span(body_left, body_right, height * 87 // 100, height * 96 // 100)
@@ -190,7 +276,7 @@ def top_parts(rgba: np.ndarray, mask: np.ndarray, profile: str | None, back: boo
     profile = profile or ("hoodie" if hooded else "long_sleeve" if long else "t_shirt")
     body = (min(waist_l, hem_l), shoulder, max(waist_r, hem_r), hem)
     pieces: dict[str, Piece] = {}
-    if flat_tshirt:
+    if flat_tshirt or profile == "sleeveless":
         return GarmentParts(profile, rgba, body, pieces)
 
     for index, piece in enumerate(sleeve_masks):
@@ -219,6 +305,6 @@ def segment_parts(png: bytes, mode: str, garment_type: str, *, back: bool = Fals
                   profile: str | None = None, photo_type: str | None = None) -> GarmentParts:
     rgba, mask = silhouette(png)
     if mode == "pants":
-        return bottom_parts(rgba, mask, profile or ("shorts" if garment_type == "shorts" else "pants"),
+        return bottom_parts(rgba, mask, profile or (garment_type if garment_type in ("shorts", "skirt") else "pants"),
                             back, worn=photo_type == "worn")
     return top_parts(rgba, mask, profile, back, flat_tshirt=mode == "t-shirt")

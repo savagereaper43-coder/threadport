@@ -267,6 +267,24 @@ def trim_skin(skin: np.ndarray, foreground: np.ndarray) -> np.ndarray:
     return largest_component(foreground & ~np.isin(labels, remove))
 
 
+def slit_skirt(shape: np.ndarray) -> bool:
+    """A fitted skirt can have a short center opening directly above its hem."""
+    height, width = shape.shape
+    if min(height, width) < 20 or not 1.25 <= height / width <= 2.20:
+        return False
+    widths = shape.sum(axis=1)
+    waist = np.median(widths[height * 4 // 100:height * 13 // 100])
+    hips = np.median(widths[height // 3:height * 2 // 3])
+    if hips < width * 0.80 or waist > hips * 0.92:
+        return False
+    left = shape.cumsum(axis=1)
+    right = left[:, -1:] - left
+    separated = ~shape & (left >= width * 0.18) & (right >= width * 0.18)
+    center = separated[:, width * 35 // 100:width * 65 // 100]
+    sustained = center[height * 82 // 100:].mean(axis=0) >= 0.46
+    return bool(np.any(sustained & (center[:height * 72 // 100].mean(axis=0) < 0.07)))
+
+
 def classify(rgb: np.ndarray, foreground: np.ndarray, worn: bool) -> tuple[str, str, str]:
     y, x = np.where(foreground)
     shape = foreground[y.min():y.max() + 1, x.min():x.max() + 1]
@@ -301,6 +319,8 @@ def classify(rgb: np.ndarray, foreground: np.ndarray, worn: bool) -> tuple[str, 
 
     if has_legs:
         return ("shorts" if height / width < 1.15 else "pants"), photo_type, "pants"
+    if not worn and slit_skirt(shape):
+        return "skirt", "hanger_product", "pants"
 
     widths = shape.sum(axis=1)
     shoulders = widths[height // 8: max(height // 8 + 1, height // 2)].max()

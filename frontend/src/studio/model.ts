@@ -1,4 +1,5 @@
 import type { TemplateKind } from '../template'
+import type { PlacedTemplate } from '../photos'
 
 export type Point = { x: number; y: number }
 export type Box = Point & { w: number; h: number }
@@ -27,7 +28,7 @@ export type Photo = Piece & { cutout?: string }
 export type Artwork = { kind: TemplateKind; layers: Layer[]; pieces: Piece[]; photos: Photo[]; groups: { id: string; name: string }[] }
 export type Project = Artwork & {
   id: string; name: string; folder: string; updated: number; thumbnail?: string
-  profile?: 't_shirt' | 'long_sleeve' | 'hoodie' | 'pants' | 'shorts'
+  profile?: PlacedTemplate['profile']
   snapshots: { name: string; artwork: Artwork }[]
 }
 export type Selection = { box: Box; points?: Point[]; mask?: Uint8ClampedArray }

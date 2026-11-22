@@ -196,3 +196,21 @@ test('a single flat-lay photo produces a pants preview on a narrow screen', asyn
   await expect.poll(backPixels).not.toEqual(recommended)
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(375)
 })
+
+test('keeps a sleeveless photo sleeveless through Result and the catalog check', async ({ page }) => {
+  const tank = fileURLToPath(new URL('../../samples/golden/striped-tank.jpg', import.meta.url))
+  await page.goto('/#auto-bash')
+  await page.locator('.drop-zone input[type=file]').setInputFiles(tank)
+  await page.getByRole('button', { name: 'Make my Roblox clothing' }).click()
+  await expect(page.getByText('Shirt · Sleeveless top')).toBeVisible({ timeout: 25_000 })
+  const check = page.getByRole('listitem').filter({ hasText: 'Required regions filled' })
+  await expect(check).toHaveClass('check-pass')
+  const canvas = page.getByRole('img', { name: 'Generated Shirt template' }).locator('canvas')
+  await expect.poll(() => canvas.evaluate((node: HTMLCanvasElement) => {
+    const ctx = node.getContext('2d')!
+    const alpha = (x: number, y: number) => ctx.getImageData(
+      Math.floor(x * node.width / 585), Math.floor(y * node.height / 559), 1, 1,
+    ).data[3]
+    return [alpha(295, 138), alpha(249, 380), alpha(339, 380)]
+  })).toEqual([255, 0, 0])
+})

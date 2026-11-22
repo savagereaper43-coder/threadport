@@ -11,7 +11,10 @@ from PIL import Image
 
 from autobash_core import autobash
 
+from .garment_parts import crop_silhouette, fitted_top
+from .placement import FACES, LIMBS, limb_textures, place_template
 from .photos import COLOR_PROFILE, PhotoError
+from .quality import face_view, rgba
 from .worn_shirts import recover_worn_template
 
 # The engine loads a shared rembg session lazily. Serialize shirt renders
@@ -68,8 +71,33 @@ def bounded_photo(photo: ShirtPhoto) -> Image.Image:
     return image
 
 
+def fit_product_shape(image: Image.Image, mask: np.ndarray, template: np.ndarray,
+                      profile: str, shading: float, has_back: bool) -> str:
+    """Use visible cuffs or straps when they disagree with the core arm length."""
+    try:
+        parts = fitted_top(*crop_silhouette(np.array(image.convert("RGBA")), mask))
+        if parts is None:
+            return profile
+        measured_profile = "sleeveless" if parts.profile == "sleeveless" else "long_sleeve"
+        if measured_profile == profile:
+            return profile
+        if measured_profile == "sleeveless":
+            replacement = rgba(place_template("shirt", parts))
+        else:
+            replacement = np.zeros_like(template)
+            for limb, face, texture in limb_textures(parts, FACES[LIMBS[0], "front"][3]):
+                face_view(replacement, limb, face)[:] = texture
+        replacement = autobash.apply_shading(replacement, shading)
+    except PhotoError:
+        return profile
+    for part, face in FACES:
+        if part in LIMBS or (measured_profile == "sleeveless" and (face != "back" or not has_back)):
+            face_view(template, part, face)[:] = face_view(replacement, part, face)
+    return measured_profile
+
+
 def make_core_shirt(front: ShirtPhoto, back: ShirtPhoto | None, shading: float,
-                    worn_cutout: bytes | None = None) -> tuple[bytes, str]:
+                    worn_cutout: bytes | None = None, *, fit_product: bool = True) -> tuple[bytes, str]:
     image = bounded_photo(front)
     with TemporaryDirectory(prefix="threadport-shirt-") as folder:
         path = Path(folder) / "front.png"
@@ -92,6 +120,8 @@ def make_core_shirt(front: ShirtPhoto, back: ShirtPhoto | None, shading: float,
     profile = "long_sleeve" if any(arm["long"] for arm in arms.values()) else "t_shirt"
     if worn_cutout and recover_worn_template(worn_cutout, shading, template):
         profile = "t_shirt"
+    elif fit_product and "mask" in debug:
+        profile = fit_product_shape(image, debug["mask"], template, profile, shading, back is not None)
     png = BytesIO()
     Image.fromarray(template).save(png, format="PNG", icc_profile=COLOR_PROFILE.tobytes())
     return png.getvalue(), profile

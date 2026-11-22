@@ -10,8 +10,11 @@ from PIL import Image
 
 from autobash_core import autobash
 from backend.placement import FACES
-from backend.processing import process_events
+from backend.garment_parts import silhouette
+from backend.photos import prepare_cutout
+from backend.processing import inspect, process_events
 from backend.quality import face_view
+from backend.shirt_engine import fit_product_shape
 
 SAMPLES = Path(__file__).resolve().parents[1] / "samples"
 
@@ -97,6 +100,17 @@ class ShirtEngineTests(unittest.IsolatedAsyncioTestCase):
             face = face_view(np.asarray(image), "torso", "front")
         self.assertTrue((face[..., 3] == 255).all())
         self.assertGreater(np.median(face[..., 2]), np.median(face[..., 0]) + 24)
+
+    def test_visible_knit_cuffs_replace_the_cores_short_sleeves(self):
+        data = (SAMPLES / "golden" / "green-knit.jpg").read_bytes()
+        cutout, _ = prepare_cutout(*inspect(data), "shirt")
+        pixels, mask = silhouette(cutout)
+        template = np.zeros((559, 585, 4), np.uint8)
+        profile = fit_product_shape(Image.fromarray(pixels), mask, template, "t_shirt", 0, False)
+        self.assertEqual(profile, "long_sleeve")
+        for limb in ("rightLimb", "leftLimb"):
+            self.assertTrue((face_view(template, limb, "front")[105:, :, 3] == 255).all())
+            self.assertTrue((face_view(template, limb, "down")[..., 3] == 255).all())
 
     def test_engine_template_matches_shared_faces(self):
         parts = {"rarm": "rightLimb", "larm": "leftLimb"}

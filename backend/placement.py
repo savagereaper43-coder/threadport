@@ -193,7 +193,7 @@ def body_layer(parts: GarmentParts, scale: float, width: int, height: int,
     # into this layer, including overhang from the sleeves, shoulders and hem.
     photo = parts.photo
     y = front_offset
-    if parts.profile in ("pants", "shorts"):
+    if parts.profile in ("pants", "shorts", "skirt"):
         photo = photo[:bottom + 1].copy()
         photo[:top] = 0
     y += (front_height - (bottom - top + 1) * scale) / 2
@@ -255,7 +255,8 @@ def clone_along_limb(seed: np.ndarray, source: np.ndarray, y: int, phase: int,
     return seed
 
 
-def limb_faces(front: np.ndarray, reverse: np.ndarray | None, width: int, height: int) -> dict[str, np.ndarray]:
+def limb_faces(front: np.ndarray, reverse: np.ndarray | None, width: int, height: int,
+               front_panel: np.ndarray | None = None) -> dict[str, np.ndarray]:
     size = width, height
     fw = front.shape[1]
     side = max(1, math.ceil(fw * 0.24))
@@ -270,6 +271,9 @@ def limb_faces(front: np.ndarray, reverse: np.ndarray | None, width: int, height
     faces = {}
     front_patches = FabricPatches(front)
     for index, (name, source) in enumerate(sources.items()):
+        if name == "front" and front_panel is not None:
+            faces[name] = front_panel
+            continue
         x = {"right": width - source.shape[1], "left": 0}.get(name, (width - source.shape[1]) // 2)
         y = (height - source.shape[0]) // 2
         patch_source = reverse if name == "back" and reverse is not None else front
@@ -287,6 +291,43 @@ def limb_faces(front: np.ndarray, reverse: np.ndarray | None, width: int, height
     return faces
 
 
+def skirt_front(parts: GarmentParts, width: int, height: int, scale: float) -> np.ndarray:
+    left, _, right, waist_end = parts.body
+    photo = parts.photo[waist_end:]
+    seed = photograph(photo, np.eye(2), scale, (width / 2 - (left + right) / 2 * scale, 0),
+                      (width, height))
+    # Both Roblox leg fronts are windows into the same original skirt panel.
+    # Sample each side separately so mending the edge does not repeat the fly.
+    split = width // 2
+    return np.concatenate([FabricPatches(side).fill(side)
+                           for side in (seed[:, :split], seed[:, split:])], axis=1)
+
+
+def limb_textures(front: GarmentParts, height: int, back: GarmentParts | None = None):
+    if height == 0:
+        return
+    profile = RULES["profiles"][front.profile]
+    full_length = profile["limb_height"] == 1 or profile["mode"] == "pants"
+    body_size = FACES["torso", "front"][2:]
+    front_scale = limb_scale(front, body_scale(front, *body_size), height, full_length=full_length)
+    back_scale = limb_scale(back, body_scale(back, *body_size), height, full_length=full_length) if back else None
+    width = FACES[LIMBS[0], "front"][2]
+    skirt = skirt_front(front, 2 * width, height, front_scale) if front.profile == "skirt" else None
+    for index, limb in enumerate(LIMBS):
+        if limb not in front.pieces:
+            continue
+        fabric = projected_piece(front.photo, front.pieces[limb], front_scale)
+        reverse = (projected_piece(back.photo, back.pieces[limb], back_scale)
+                   if back and limb in back.pieces else None)
+        panel = skirt[:, index * width:(index + 1) * width] if skirt is not None else None
+        faces = limb_faces(fabric, reverse, width, height, front_panel=panel)
+        for name, texture in faces.items():
+            yield limb, name, texture
+        yield limb, "up", clone_cap(fabric, faces["front"][0], FACES[limb, "up"][2:], bottom=False)
+        if profile["limb_height"] == 1:
+            yield limb, "down", clone_cap(fabric, faces["front"][-1], FACES[limb, "down"][2:], bottom=True)
+
+
 def place_template(mode: str, front: GarmentParts, back: GarmentParts | None = None) -> bytes:
     if mode == "t-shirt":
         width, height = TSHIRT_SIZE
@@ -300,12 +341,8 @@ def place_template(mode: str, front: GarmentParts, back: GarmentParts | None = N
         limb_height = round(FACES["rightLimb", "front"][3] * profile["limb_height"])
         side_width = FACES["torso", "right"][2]
         _, _, body_width, body_height = FACES["torso", "front"]
-        full_sleeve = profile["limb_height"] == 1
-        complete_limb = full_sleeve or profile["mode"] == "pants"
         scale = body_scale(front, body_width, body_height)
-        front_limb_scale = limb_scale(front, scale, limb_height, full_length=complete_limb)
         back_scale = body_scale(back, body_width, body_height) if back else None
-        back_limb_scale = limb_scale(back, back_scale, limb_height, full_length=complete_limb) if back else None
 
         def put(part: str, face: str, texture: np.ndarray) -> None:
             x, y, w, h = FACES[part, face]
@@ -317,6 +354,8 @@ def place_template(mode: str, front: GarmentParts, back: GarmentParts | None = N
         # The lower torso provides neutral fabric for cloning around edges and
         # below a short waistband while keeping logos and pockets on the photo.
         plain = material[material.shape[0] // 2:].copy()
+        if front.profile == "sleeveless":
+            plain = plain[:, plain.shape[1] // 4:plain.shape[1] * 3 // 4]
         if profile["mode"] == "pants":
             # Keep the fly out of cloned fabric. Its photographed pixels stay
             # in the front layer exactly where they landed.
@@ -337,6 +376,10 @@ def place_template(mode: str, front: GarmentParts, back: GarmentParts | None = N
             back_material = body_material(back, back_scale, (body_width, body_height))
             rear = body_layer(back, back_scale, body_width, body_height, 0, body_height)
             put("torso", "back", FabricPatches(back_material).fill(rear))
+        elif front.profile == "sleeveless":
+            rear = np.zeros_like(body_front)
+            rear[:, 0], rear[:, -1] = band[:, -1], band[:, 0]
+            put("torso", "back", FabricPatches(swatches).fill(rear))
 
         for face in ("up", "down"):
             bottom = face == "down"
@@ -349,19 +392,8 @@ def place_template(mode: str, front: GarmentParts, back: GarmentParts | None = N
             put("torso", face, clone_cap(cap_source, body_front[-1 if bottom else 0],
                                          cap_size, bottom, overhang))
 
-        for limb in LIMBS:
-            if limb not in front.pieces:
-                continue
-            fabric = projected_piece(front.photo, front.pieces[limb], front_limb_scale)
-            reverse = (projected_piece(back.photo, back.pieces[limb], back_limb_scale)
-                       if back and limb in back.pieces else None)
-            width = FACES[limb, "front"][2]
-            faces = limb_faces(fabric, reverse, width, limb_height)
-            for name, texture in faces.items():
-                put(limb, name, texture)
-            put(limb, "up", clone_cap(fabric, faces["front"][0], FACES[limb, "up"][2:], bottom=False))
-            if full_sleeve:
-                put(limb, "down", clone_cap(fabric, faces["front"][-1], FACES[limb, "down"][2:], bottom=True))
+        for part, face, texture in limb_textures(front, limb_height, back):
+            put(part, face, texture)
 
     output = BytesIO()
     Image.fromarray(canvas).save(output, format="PNG", icc_profile=COLOR_PROFILE.tobytes())

@@ -18,10 +18,23 @@ export type Cutout = {
   mode: TemplateKind
 }
 
-export type Progress = { step: 'finding' | 'removing' | 'cutting' | 'placing'; percent: number }
+export type Progress = {
+  step: 'finding' | 'removing' | 'cutting' | 'placing' | 'filling' | 'shading' | 'checking'
+  percent: number
+}
 
-export type PlacedTemplate = {
+type TemplateQuality = {
+  score: number
+  regions: Record<string, { score: number; note?: string }>
+}
+
+type TemplateVariant = {
   png: string
+  quality: TemplateQuality
+}
+
+export type PlacedTemplate = TemplateVariant & {
+  alternate?: TemplateVariant
   mode: TemplateKind
   profile: 't_shirt' | 'long_sleeve' | 'hoodie' | 'pants' | 'shorts'
   has_back: boolean

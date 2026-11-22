@@ -396,8 +396,8 @@ A full photobash editor. It should feel like a simple, black-themed Photopea/Pho
 - [x] Stage 1 — Monorepo, black UI shell, shared template layout, hidden region guides, and exact-size PNG export. Browser tests and API smoke checks passed. All face positions and orientations were checked against the supplied Roblox shirt and pants JPEGs. The exact 585 × 559 bounds are tested separately.
 - [x] Stage 2 — Photo upload, live progress, cutout previews, and clothing and photo type guesses. GrabCut works without a model, and rembg can be enabled for clothing segmentation. Busy backgrounds and photos with several garments can still leave unwanted material. Template placement starts in Stage 3.
 - [ ] Stage 3 — Classic Shirt placement uses the supplied Auto Bash core and the Result screen passes its shading slider to the engine. Pants and square T-Shirt graphics use the existing path. All four samples were rendered and reviewed. Worn-photo quality and the 30-photo review set remain open. See `samples/out/report.md`.
-- [ ] Stage 4
-- [ ] Stage 5
+- [ ] Stage 4 — Added photographed fabric fills for missing pants backs, pattern tiling, pants and shorts shading art, denim pocket stitches, seam and color finishing, and per-region confidence in Result. All four samples were rendered and scored. Worn-shirt sleeve patterns and placement still need work, and the broader 30-photo review set remains open. See `samples/out/report.md`.
+- [x] Stage 5 — Result shows flat front and back avatar previews. Quick-Fix edits update both previews and the PNG export. The catalog checklist validates the current image and offers copyable listing text. Verified with backend and Chromium tests and reviewed at desktop and phone sizes.
 - [ ] Stage 6
 - [ ] Stage 7
 - [ ] Stage 8

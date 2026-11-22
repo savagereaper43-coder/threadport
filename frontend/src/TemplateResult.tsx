@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Image as CanvasImage, Layer, Stage } from 'react-konva'
 import { usePhotoUrl } from './PhotoUpload'
-import { processPhotos } from './photos'
-import type { PlacedTemplate, ProcessResult } from './photos'
+import { downloadResult, imagePixels, palette, useTemplateImage } from './resultImage'
+import { CatalogChecklist, FixPanel, Mannequins } from './ResultTools'
+import { useResultEdits } from './useResultEdits'
+import type { Mode, PhotoSelection, PlacedTemplate, ProcessResult } from './photos'
 import { regionLabel, templates } from './template'
 
 const photoTypes: Record<string, string> = {
@@ -21,18 +23,15 @@ const profiles = {
   shorts: 'Shorts',
 }
 
-function GeneratedTemplate({ template, showRegions }: { template: PlacedTemplate; showRegions: boolean }) {
+function GeneratedTemplate({ template, image, showRegions }: {
+  template: PlacedTemplate
+  image?: HTMLImageElement
+  showRegions: boolean
+}) {
   const host = useRef<HTMLDivElement>(null)
-  const [image, setImage] = useState<HTMLImageElement>()
   const [previewWidth, setPreviewWidth] = useState(0)
+  const [activeRegion, setActiveRegion] = useState('')
   const { label, width, height, regions } = templates[template.mode]
-
-  useEffect(() => {
-    const next = new Image()
-    next.onload = () => setImage(next)
-    next.src = `data:image/png;base64,${template.png}`
-    return () => { next.onload = null }
-  }, [template.png])
 
   useEffect(() => {
     const node = host.current
@@ -43,41 +42,63 @@ function GeneratedTemplate({ template, showRegions }: { template: PlacedTemplate
   }, [])
 
   const scale = previewWidth / width
+  const inspected = showRegions ? template.quality.regions[activeRegion] : undefined
+  const [part, face] = activeRegion.split('.')
   return (
-    <div
-      ref={host}
-      className="checkerboard generated-template"
-      style={{ aspectRatio: `${width} / ${height}`, maxWidth: width }}
-      role={showRegions ? 'group' : 'img'}
-      aria-label={`Generated ${label} template`}
-    >
-      {previewWidth > 0 && (
-        <Stage width={previewWidth} height={height * scale} listening={false}>
-          <Layer><CanvasImage image={image} width={previewWidth} height={height * scale} /></Layer>
-        </Stage>
+    <>
+      <div
+        ref={host}
+        className="checkerboard generated-template"
+        style={{ aspectRatio: `${width} / ${height}`, maxWidth: width }}
+        role={showRegions ? 'group' : 'img'}
+        aria-label={`Generated ${label} template`}
+      >
+        {previewWidth > 0 && (
+          <Stage width={previewWidth} height={height * scale} listening={false}>
+            <Layer><CanvasImage image={image} width={previewWidth} height={height * scale} /></Layer>
+          </Stage>
+        )}
+        {showRegions && regions.map(({ part, face, x, y, w, h }) => {
+          const key = `${part}.${face}`
+          const quality = template.quality.regions[key]
+          const name = regionLabel(template.mode, part, face)
+          const details = quality ? `${name} · ${quality.score}%${quality.note ? ` · ${quality.note}` : ''}` : name
+          const low = quality && quality.score < 75
+          return (
+            <div
+              key={key}
+              className={low ? 'region low-confidence' : 'region'}
+              title={details}
+              tabIndex={quality ? 0 : undefined}
+              aria-label={details}
+              role={quality ? 'img' : undefined}
+              onMouseEnter={quality ? () => setActiveRegion(key) : undefined}
+              onFocus={quality ? () => setActiveRegion(key) : undefined}
+              style={{
+                left: `${100 * x / width}%`,
+                top: `${100 * y / height}%`,
+                width: `${100 * w / width}%`,
+                height: `${100 * h / height}%`,
+              }}
+            >
+              {name}
+            </div>
+          )
+        })}
+      </div>
+      {inspected && (
+        <p className="region-quality">
+          {regionLabel(template.mode, part, face)} · {inspected.score}%{inspected.note && ` · ${inspected.note}`}
+        </p>
       )}
-      {showRegions && regions.map(({ part, face, x, y, w, h }) => (
-        <div
-          key={`${part}.${face}`}
-          className="region"
-          title={regionLabel(template.mode, part, face)}
-          style={{
-            left: `${100 * x / width}%`,
-            top: `${100 * y / height}%`,
-            width: `${100 * w / width}%`,
-            height: `${100 * h / height}%`,
-          }}
-        >
-          {regionLabel(template.mode, part, face)}
-        </div>
-      ))}
-    </div>
+    </>
   )
 }
 
-export default function TemplateResult({ original, backPhoto, result, onBack }: {
+export default function TemplateResult({ original, selection, mode, result, onBack }: {
   original: File
-  backPhoto: File | null
+  selection: PhotoSelection
+  mode: Mode
   result: ProcessResult
   onBack: () => void
 }) {
@@ -85,48 +106,25 @@ export default function TemplateResult({ original, backPhoto, result, onBack }: 
   const heading = useRef<HTMLHeadingElement>(null)
   const [selected, setSelected] = useState(-1)
   const [showRegions, setShowRegions] = useState(false)
-  const [shading, setShading] = useState(100)
-  const [rendered, setRendered] = useState({ strength: 100, template: result.template })
-  const [shadingError, setShadingError] = useState('')
-  const [retryCount, setRetryCount] = useState(0)
-  const { photos } = result
-  const { template } = rendered
+  const tools = useResultEdits(result, selection, mode)
+  const { photos, template, png } = tools
+  const baseImage = useTemplateImage(template.png)
+  const display = useTemplateImage(png)
+  const displayPixels = useMemo(() => display.image && imagePixels(display.image), [display.image])
+  const baseColors = useMemo(() => palette(baseImage.image && imagePixels(baseImage.image)), [baseImage.image])
+  const displayColors = useMemo(() => palette(displayPixels), [displayPixels])
   const { label, width, height } = templates[template.mode]
   const cutout = photos[selected]
   const photoType = photoTypes[(cutout ?? photos[0]).photo_type]
   const firstAngle = photos.findIndex(({ role }) => role === 'angles')
+  const settled = !tools.placing && !tools.editing && display.ready
 
   useEffect(() => { heading.current?.focus() }, [])
-
-  useEffect(() => {
-    if (result.template.mode !== 'shirt' || shading === rendered.strength) return
-    if (shading === 100) {
-      setRendered({ strength: 100, template: result.template })
-      return
-    }
-    const request = new AbortController()
-    const timer = window.setTimeout(async () => {
-      try {
-        const answer = await processPhotos({ front: original, back: backPhoto, angles: [] },
-          'shirt', request.signal, () => {}, shading / 100)
-        if (!request.signal.aborted) setRendered({ strength: shading, template: answer.template })
-      } catch {
-        if (!request.signal.aborted) {
-          setShadingError('Couldn’t update the shading. Try again.')
-        }
-      }
-    }, 450)
-    return () => {
-      window.clearTimeout(timer)
-      request.abort()
-    }
-  }, [backPhoto, original, rendered.strength, result.template, retryCount, shading])
 
   return (
     <div className="result-page">
       <div className="page-heading">
         <h1 ref={heading} tabIndex={-1}>Template preview</h1>
-        <p>Clothing from your photo is now placed on the Roblox template.</p>
       </div>
       <div className="result-grid">
         <section className="panel result-source" aria-labelledby="source-title">
@@ -149,66 +147,54 @@ export default function TemplateResult({ original, backPhoto, result, onBack }: 
           </label>
           <p className="source-type">Photo type guess: {photoType}</p>
         </section>
-        <section className="panel preview" aria-labelledby="placed-title">
-          <div className="panel-header">
-            <h2 id="placed-title">Roblox template</h2>
-            <span className="template-size">{width} × {height} px</span>
-          </div>
-          <div className="preview-area"><GeneratedTemplate template={template} showRegions={showRegions} /></div>
-        </section>
-        <section className="panel controls result-details" aria-labelledby="placed-details">
-          <h2 id="placed-details">Template details</h2>
-          <dl className="photo-details">
-            <div><dt>Template type</dt><dd>{label}</dd></div>
-            <div><dt>Clothing guess</dt><dd>{profiles[template.profile]}</dd></div>
-          </dl>
+        <div className="result-center">
+          <section className="panel preview" aria-labelledby="placed-title">
+            <div className="panel-header">
+              <div>
+                <h2 id="placed-title">Roblox template</h2>
+                <p className="template-size">{label} · {profiles[template.profile]}</p>
+              </div>
+              <span className="template-size">{width} × {height} px</span>
+            </div>
+            <div className="preview-area">
+              <GeneratedTemplate template={template} image={display.image} showRegions={showRegions} />
+              {display.failed && <p role="alert">The template couldn’t open. Re-run auto placement to try again.</p>}
+              <div className="preview-controls">
+                <span className="match-score" title="Estimated from automatic placement">
+                  Estimated match {template.quality.score}%
+                </span>
+                <label className="preview-region-toggle">
+                  <input type="checkbox" checked={showRegions} onChange={(event) => setShowRegions(event.target.checked)} />
+                  Show regions
+                </label>
+              </div>
+              {showRegions && <p className="region-quality">Amber marks a region to check. Point to it or use Tab to read its estimate.</p>}
+            </div>
+            {display.image && <Mannequins image={display.image} mode={template.mode} />}
+          </section>
+          {display.ready && displayPixels && (
+            <CatalogChecklist png={png} pixels={displayPixels} template={template} sleeves={tools.fixes.sleeves} colors={displayColors} />
+          )}
+        </div>
+        <div className="result-actions">
+          <FixPanel tools={tools} palette={baseColors} ready={settled}
+            download={() => downloadResult(png, `threadport-${template.mode}.png`)} />
           {template.mode !== 't-shirt' && (
             <p className="result-note">
-              {template.has_back
-                ? 'The torso back uses your back photo.'
-                : template.mode === 'shirt'
-                  ? 'The torso back uses fabric from your front photo.'
-                  : 'Add a back photo to fill the torso back. The arms or legs wrap using fabric from your photo.'}
+              {tools.fixes.plain_back || tools.fixes.back_version
+                ? 'The torso back uses fabric from the sides.'
+                : template.has_back
+                  ? 'The torso back uses your back photo.'
+                  : 'We guessed the torso back from your front photo.'}
             </p>
           )}
-          {template.mode === 'shirt' && (
-            <fieldset className="shading-control">
-              <legend>Quick-Fix</legend>
-              <label htmlFor="shading-strength">
-                Shading strength
-                <span aria-hidden="true">{shading}%</span>
-              </label>
-              <input
-                id="shading-strength"
-                type="range"
-                min={0}
-                max={100}
-                value={shading}
-                aria-valuetext={`${shading}%`}
-                onChange={(event) => {
-                  setShadingError('')
-                  setShading(event.target.valueAsNumber)
-                }}
-              />
-              {shadingError ? (
-                <>
-                  <p role="alert">{shadingError}</p>
-                  <button className="text-button" type="button" onClick={() => {
-                    setShadingError('')
-                    setRetryCount((count) => count + 1)
-                  }}>Retry shading</button>
-                </>
-              ) : shading !== rendered.strength && (
-                <p role="status">Updating shading…</p>
-              )}
-            </fieldset>
+          {tools.alternate && (
+            <button className="text-button" type="button" onClick={tools.toggleAlternate}>
+              {tools.useAlternate ? 'Show recommended version' : 'Try another version'}
+            </button>
           )}
-          <label className="guide-control">
-            <span>Show regions</span>
-            <input type="checkbox" checked={showRegions} onChange={(event) => setShowRegions(event.target.checked)} />
-          </label>
           <button className="text-button" type="button" onClick={onBack}>Back to upload</button>
-        </section>
+        </div>
       </div>
     </div>
   )

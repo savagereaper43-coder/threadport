@@ -45,7 +45,8 @@ async def run(files: list[Path], destination: Path, review: bool = False) -> int
                 output.write_bytes(base64.b64decode(template["png"]))
                 if review:
                     save_review(output)
-                print(f"{source.name} → {output} ({template['profile']})")
+                print(f"{source.name} → {output} ({template['profile']}, "
+                      f"{template['quality']['score']}% estimated match)")
             elif event["type"] == "error":
                 print(f"{source.name}: {event['message']}")
                 failures += 1

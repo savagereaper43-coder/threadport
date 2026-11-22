@@ -141,6 +141,9 @@ test('the live endpoint streams ordered progress and returns the requested templ
     ['progress', 'removing', 60],
     ['progress', 'cutting', 60],
     ['progress', 'placing', 85],
+    ['progress', 'filling', 87],
+    ['progress', 'shading', 92],
+    ['progress', 'checking', 97],
     ['result', undefined, 100],
   ])
   expect(events[3]).toMatchObject({ garment_type: 't_shirt', mode: 't-shirt', method: 'grabcut' })
@@ -171,6 +174,25 @@ test('a single flat-lay photo produces a pants preview on a narrow screen', asyn
   await page.locator('.drop-zone input[type=file]').setInputFiles(pants)
   await page.getByRole('button', { name: 'Make my Roblox clothing' }).click()
   await expect(page.getByRole('img', { name: 'Generated Pants template' })).toBeVisible()
-  await expect(page.getByText('Add a back photo to fill the torso back. The arms or legs wrap using fabric from your photo.')).toBeVisible()
+  await expect(page.getByText('We guessed the torso back from your front photo.')).toBeVisible()
+  await expect(page.getByText(/Estimated match \d+%/)).toBeVisible()
+  await page.getByRole('checkbox', { name: 'Show regions' }).check()
+  const waistBack = page.getByRole('img', { name: /Waist back.*guessed the back/ })
+  await expect(waistBack).toHaveClass(/low-confidence/)
+  await waistBack.focus()
+  await expect(waistBack).toBeFocused()
+  await expect(page.getByText(/Waist back · \d+% · We guessed the back/)).toBeVisible()
+  const canvas = page.locator('.generated-template canvas')
+  const backPixels = () => canvas.evaluate((node: HTMLCanvasElement) => {
+    const context = node.getContext('2d')!
+    return Array.from(context.getImageData(
+      Math.floor(node.width * 480 / 585), Math.floor(node.height * 130 / 559), 3, 3,
+    ).data)
+  })
+  await expect.poll(async () => (await backPixels())[3]).toBe(255)
+  const recommended = await backPixels()
+  await page.getByRole('button', { name: 'Try another version' }).click()
+  await expect(page.getByRole('button', { name: 'Show recommended version' })).toBeVisible()
+  await expect.poll(backPixels).not.toEqual(recommended)
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(375)
 })

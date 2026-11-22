@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from .fabric_pattern import pattern_fill
 from .garment_parts import GarmentParts, Piece
 from .photos import COLOR_PROFILE, PhotoError
 
@@ -114,6 +115,7 @@ class FabricPatches:
 
     def __init__(self, source: np.ndarray, spacing: int = 25):
         opaque = (source[..., 3] == 255).astype(np.uint8)
+        self.pattern_source = source if opaque.all() else None
         integral = cv2.integral(opaque)
         for side in range(min(spacing, *opaque.shape), 0, -1):
             area = integral[side:, side:] - integral[:-side, side:] - integral[side:, :-side] + integral[:-side, :-side]
@@ -142,6 +144,12 @@ class FabricPatches:
     def fill(self, seed: np.ndarray, *, follow_length: bool = False) -> np.ndarray:
         result = seed.copy()
         height, width = result.shape[:2]
+        if self.pattern_source is not None:
+            tiled = pattern_fill(self.pattern_source, (height, width), 0, seed)
+            if tiled is not None:
+                empty = result[..., 3] == 0
+                result[empty] = tiled[empty]
+                return result
         side = self.side
         stride = max(1, side * 2 // 3)
         uses = np.zeros(len(self.patches), dtype=np.float32)

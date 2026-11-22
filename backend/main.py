@@ -4,9 +4,11 @@ from fastapi import FastAPI
 
 from .placement import REGIONS
 from .processing import router as processing_router
+from .quick_fix import router as quick_fix_router
 
 app = FastAPI(title="ThreadPort")
 app.include_router(processing_router)
+app.include_router(quick_fix_router)
 
 
 @app.get("/health")

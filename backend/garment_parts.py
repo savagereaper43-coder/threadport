@@ -120,7 +120,7 @@ def bottom_parts(rgba: np.ndarray, mask: np.ndarray, profile: str, back: bool, w
     if worn:
         # A whole-body photo can start at the shoulders. Use the crotch and
         # leg length to isolate the approximate waist above them.
-        top = max(top, crotch - round((height - crotch) * 0.49))
+        top = max(top, crotch - round((height - crotch) * 0.22))
     hem = crotch - max(2, height // 85)
     top_edges = span(left, right, top, min(hem, top + 5))
     hem_edges = span(left, right, max(top, hem - 4), hem + 1)

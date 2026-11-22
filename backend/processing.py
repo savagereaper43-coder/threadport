@@ -15,7 +15,8 @@ from starlette.formparsers import MultiPartException, MultiPartParser
 from .garment_parts import segment_parts
 from .placement import place_template
 from .photos import PhotoError, decode_photo, find_face, prepare_cutout, work_photo
-from .shirt_engine import make_core_shirt
+from .quality import fill_unseen, finish_images, review_templates
+from .shirt_engine import make_core_shirt, shirt_photo
 
 MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_REQUEST_BYTES = 5 * MAX_FILE_BYTES + 64 * 1024
@@ -109,16 +110,21 @@ async def process_events(
             yield event("progress", step="removing", percent=20 + 40 * (index + 1) // len(inspected))
 
         yield event("progress", step="cutting", percent=60)
-        png, details = source_photos["front"]
-        template_mode = details["mode"]
+        front_png, details = source_photos["front"]
+        originals = {role: image[0] for role, image in inspected}
+        original = originals["front"]
+        template_mode, photo_type = details["mode"], details["photo_type"]
         if template_mode == "shirt":
-            originals = {role: image[0] for role, image in inspected}
-            back = originals.get("back")
+            front = shirt_photo(original, front_png, photo_type)
+            back = None
+            if "back" in originals:
+                back_png, back_details = source_photos["back"]
+                back = shirt_photo(originals["back"], back_png, back_details["photo_type"])
             yield event("progress", step="placing", percent=85)
-            template, profile = await run_in_threadpool(make_core_shirt, originals["front"], back, shading)
+            template, profile = await run_in_threadpool(make_core_shirt, front, back, shading)
         else:
             front = await run_in_threadpool(
-                segment_parts, png, template_mode, details["garment_type"], photo_type=details["photo_type"]
+                segment_parts, front_png, template_mode, details["garment_type"], photo_type=photo_type
             )
             back = None
             if template_mode == "pants" and "back" in source_photos:
@@ -133,11 +139,20 @@ async def process_events(
             yield event("progress", step="placing", percent=85)
             template = await run_in_threadpool(place_template, template_mode, front, back)
             profile = front.profile
+        has_back = back is not None
+        yield event("progress", step="filling", percent=87)
+        candidates = await run_in_threadpool(fill_unseen, template, template_mode, profile, has_back)
+        yield event("progress", step="shading", percent=92)
+        await run_in_threadpool(finish_images, candidates, template_mode, profile, shading, original)
+        yield event("progress", step="checking", percent=97)
+        reviewed = await run_in_threadpool(review_templates, candidates, template_mode, profile, photo_type, has_back, front_png)
+        encoded = [{"png": base64.b64encode(data).decode("ascii"), "quality": quality} for data, quality in reviewed]
         yield event("result", percent=100, template={
-            "png": base64.b64encode(template).decode("ascii"),
+            **encoded[0],
             "mode": template_mode,
             "profile": profile,
-            "has_back": back is not None,
+            "has_back": has_back,
+            **({"alternate": encoded[1]} if len(encoded) > 1 else {}),
         })
     except PhotoError as error:
         yield event("error", message=str(error))

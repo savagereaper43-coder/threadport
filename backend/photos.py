@@ -181,7 +181,11 @@ def grabcut_mask(rgb: np.ndarray, face: Face | None, worn: bool) -> np.ndarray:
         initial[height // 5:4 * height // 5, 2 * width // 5:3 * width // 5] = cv2.GC_FGD
         initial[:height // 8, :width // 8] = cv2.GC_BGD
         initial[:height // 8, -width // 8:] = cv2.GC_BGD
-        initial[skin_mask(rgb)] = cv2.GC_BGD
+        # A front graphic can share skin colors. Seed the outside arms and
+        # the neck as background while leaving the center print to GrabCut.
+        side = np.ones((height, width), dtype=bool)
+        side[height // 9:, width // 4:3 * width // 4] = False
+        initial[skin_mask(rgb) & side] = cv2.GC_BGD
     # The artificial border supplies background seeds without trimming clothes touching the frame.
     padded = cv2.copyMakeBorder(rgb, edge, edge, edge, edge, cv2.BORDER_CONSTANT,
                                 value=tuple(float(value) for value in np.median(rgb[0], axis=0)))
@@ -236,7 +240,7 @@ def trim_skin(skin: np.ndarray, foreground: np.ndarray) -> np.ndarray:
     rim = foreground & ~cv2.erode(foreground.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
     _, labels, stats, _ = cv2.connectedComponentsWithStats(skin.astype(np.uint8))
     remove = np.unique(labels[rim & (labels > 0)])
-    remove = remove[stats[remove, cv2.CC_STAT_AREA] >= max(12, skin.size * 0.002)]
+    remove = remove[stats[remove, cv2.CC_STAT_AREA] >= max(12, skin.size * 0.001)]
     return largest_component(foreground & ~np.isin(labels, remove))
 
 
@@ -306,6 +310,11 @@ def prepare_cutout(
         if face is not None and method == "grabcut":
             x, y, w, h = face
             skin[:min(height, y + h), max(0, x - w // 4):min(width, x + 5 * w // 4)] = True
+            if mode == "pants" or (mode == "auto" and height > 1.15 * width):
+                # Lit hands on the edge of a full-body photo can have pink
+                # chroma outside the initial skin range.
+                _, red, blue = cv2.split(cv2.cvtColor(rgb, cv2.COLOR_RGB2YCrCb))
+                skin |= foreground & (red > 144) & (blue <= 135)
         foreground = trim_skin(skin, foreground)
         small = np.where(foreground, small, 0).astype(np.uint8)
         mask = small

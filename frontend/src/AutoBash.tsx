@@ -16,7 +16,7 @@ const checklist = [
   'Adding shading…',
   'Checking quality…',
 ]
-const stepIndex = { finding: 0, removing: 1, cutting: 2, placing: 3 }
+const stepIndex = { finding: 0, removing: 1, cutting: 2, placing: 3, filling: 4, shading: 5, checking: 6 }
 
 function Processing({ front, progress, onCancel }: {
   front: File
@@ -126,7 +126,7 @@ export function AutoBash({ onStepChange }: { onStepChange: (step: AutoBashStep) 
   if (result && photos.front) {
     return (
       <Suspense fallback={<p role="status">Opening template preview…</p>}>
-        <TemplateResult original={photos.front} backPhoto={photos.back} result={result} onBack={returnToUpload} />
+        <TemplateResult original={photos.front} selection={photos} mode={mode} result={result} onBack={returnToUpload} />
       </Suspense>
     )
   }

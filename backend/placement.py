@@ -227,7 +227,8 @@ def clone_cap(source: np.ndarray, boundary: np.ndarray, size: tuple[int, int], b
     return FabricPatches(source).fill(seed)
 
 
-def clone_along_limb(seed: np.ndarray, source: np.ndarray, y: int, phase: int) -> np.ndarray:
+def clone_along_limb(seed: np.ndarray, source: np.ndarray, y: int, phase: int,
+                     *, quiet: bool = False) -> np.ndarray:
     """Cover spare width with a translated strip running the length of the limb."""
     height, width = seed.shape[:2]
     opacity = source[..., 3] == 255
@@ -236,6 +237,13 @@ def clone_along_limb(seed: np.ndarray, source: np.ndarray, y: int, phase: int) -
     # original heights on all four faces, even where more width is needed.
     strip_width = min(width, max(1, round(np.percentile(counts, 65) * 0.70)))
     center_columns = opacity.sum(axis=0)
+    if quiet:
+        # A quiet lengthwise strip retains the cloth's fade and hem without
+        # carrying front pocket seams and knee creases around every face.
+        light = cv2.cvtColor(source[..., :3], cv2.COLOR_RGB2GRAY).astype(np.float32)
+        smooth = cv2.GaussianBlur(light, (5, 5), 1.2)
+        detail = (np.abs(light - smooth) * opacity).sum(axis=0)
+        center_columns = center_columns - 0.095 * detail
     weights = np.convolve(center_columns, np.ones(strip_width), "valid")
     start = int(weights.argmax())
     strip = source[:, start:start + strip_width]
@@ -250,14 +258,14 @@ def clone_along_limb(seed: np.ndarray, source: np.ndarray, y: int, phase: int) -
 def limb_faces(front: np.ndarray, reverse: np.ndarray | None, width: int, height: int) -> dict[str, np.ndarray]:
     size = width, height
     fw = front.shape[1]
-    side = max(1, math.ceil(fw * 0.38))
+    side = max(1, math.ceil(fw * 0.24))
     # Cuts run along the complete photographed limb. Rotate only the source
     # as a whole, then move or mirror these strips without changing their scale.
     sources = {
         "front": front,
         "right": front[:, :side][:, ::-1],
         "left": front[:, -side:][:, ::-1],
-        "back": reverse if reverse is not None else front[:, fw // 4:fw - fw // 4][:, ::-1],
+        "back": reverse if reverse is not None else front[:, :0],
     }
     faces = {}
     front_patches = FabricPatches(front)
@@ -266,7 +274,8 @@ def limb_faces(front: np.ndarray, reverse: np.ndarray | None, width: int, height
         y = (height - source.shape[0]) // 2
         patch_source = reverse if name == "back" and reverse is not None else front
         seed = layer(source, width, height, x, y)
-        seed = clone_along_limb(seed, patch_source, y, phase=index * 7)
+        inferred = name != "front" and not (name == "back" and reverse is not None)
+        seed = clone_along_limb(seed, patch_source, y, phase=index * 7, quiet=inferred)
         patches = front_patches if patch_source is front else FabricPatches(patch_source)
         faces[name] = patches.fill(seed, follow_length=True)
     # Anchor each UV join to the same boundary texels. The interiors are

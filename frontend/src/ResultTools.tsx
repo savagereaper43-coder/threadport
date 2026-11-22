@@ -259,11 +259,13 @@ export function CatalogChecklist({ png, pixels, template, sleeves, colors }: {
         {listing.map(({ label, value }) => (
           <div key={label}>
             <dt>{label}</dt>
-            <dd>{value}</dd>
-            <button className="secondary-button" type="button" aria-label={`Copy ${label.toLowerCase()}`}
-              onClick={() => { void copy(label, value) }}>
-              <Copy size={14} aria-hidden="true" /> Copy
-            </button>
+            <dd>
+              <span className="catalog-value">{value}</span>
+              <button className="secondary-button" type="button" aria-label={`Copy ${label.toLowerCase()}`}
+                onClick={() => { void copy(label, value) }}>
+                <Copy size={14} aria-hidden="true" /> Copy
+              </button>
+            </dd>
           </div>
         ))}
       </dl>

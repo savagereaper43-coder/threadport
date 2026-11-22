@@ -5,6 +5,7 @@ import asyncio
 import base64
 import json
 import re
+from time import perf_counter
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -32,24 +33,36 @@ def save_review(template: Path) -> None:
     background.save(review / template.with_suffix(".jpg").name, quality=92, subsampling=0)
 
 
-async def run(files: list[Path], destination: Path, review: bool = False) -> int:
+async def run(files: list[Path], destination: Path, review: bool = False, summary: Path | None = None) -> int:
     destination.mkdir(parents=True, exist_ok=True)
     failures = 0
+    results = []
     for source in files:
+        name = re.sub(r"[^a-z0-9]+", "-", source.stem.lower()).strip("-")
+        output = destination / f"{name}.png"
+        began = perf_counter()
+        row = {"sample": source.name, "id": name}
         async for line in process_events("auto", [("front", source.read_bytes())]):
             event = json.loads(line)
-            if event["type"] == "result":
+            if event["type"] == "photo":
+                row.update({key: event[key] for key in ("photo_type", "garment_type", "method")})
+            elif event["type"] == "result":
                 template = event["template"]
-                name = re.sub(r"[^a-z0-9]+", "-", source.stem.lower()).strip("-")
-                output = destination / f"{name}.png"
                 output.write_bytes(base64.b64decode(template["png"]))
                 if review:
                     save_review(output)
+                row.update(mode=template["mode"], profile=template["profile"], estimate=template["quality"]["score"])
                 print(f"{source.name} → {output} ({template['profile']}, "
-                      f"{template['quality']['score']}% estimated match)")
+                      f"{template['quality']['score']}% estimated match)", flush=True)
             elif event["type"] == "error":
-                print(f"{source.name}: {event['message']}")
+                row["error"] = event["message"]
+                print(f"{source.name}: {event['message']}", flush=True)
                 failures += 1
+        row["seconds"] = round(perf_counter() - began, 3)
+        results.append(row)
+    if summary:
+        summary.parent.mkdir(parents=True, exist_ok=True)
+        summary.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
     return int(failures > 0)
 
 
@@ -58,10 +71,12 @@ def main() -> int:
     parser.add_argument("photos", nargs="*", type=Path)
     parser.add_argument("--output", type=Path, default=SAMPLES / "out")
     parser.add_argument("--review", action="store_true", help="save enlarged visual review copies")
+    parser.add_argument("--summary", type=Path, help="write the render outcomes and timings as JSON")
     args = parser.parse_args()
-    files = args.photos or sorted(path for path in SAMPLES.iterdir()
+    files = args.photos or sorted(path for folder in (SAMPLES, SAMPLES / "golden") if folder.is_dir()
+                                  for path in folder.iterdir()
                                   if path.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"})
-    return asyncio.run(run(files, args.output, args.review))
+    return asyncio.run(run(files, args.output, args.review, args.summary))
 
 
 if __name__ == "__main__":

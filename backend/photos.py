@@ -127,6 +127,17 @@ def dark_fabric(gray: np.ndarray, edge: int) -> np.ndarray | None:
     return ~np.isin(labels, outside[outside != 0])
 
 
+def corner_backdrop(lab: np.ndarray, edge: int) -> np.ndarray | None:
+    height, width = lab.shape[:2]
+    corners = np.stack([np.median(lab[y:y + edge, x:x + edge], axis=(0, 1))
+                        for x in (0, width - edge) for y in (0, height - edge)])
+    agreement = np.linalg.norm(corners[:, None] - corners, axis=2) < 26
+    best = agreement[agreement.sum(axis=1).argmax()]
+    if best.sum() < 3:
+        return None
+    return np.median(corners[best], axis=0)
+
+
 def grabcut_mask(rgb: np.ndarray, face: Face | None, worn: bool) -> np.ndarray:
     height, width = rgb.shape[:2]
     edge = max(2, min(height, width) // 40)
@@ -142,9 +153,21 @@ def grabcut_mask(rgb: np.ndarray, face: Face | None, worn: bool) -> np.ndarray:
     dark = None
     center = np.zeros((height, width), dtype=bool)
     center[height // 6: 5 * height // 6, width // 5: 4 * width // 5] = True
-    core = cv2.erode((possible & center).astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
+
+    def centerpiece(values):
+        return cv2.erode((values & center).astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
+
+    core = centerpiece(possible)
     if not worn and np.count_nonzero(core) < height * width * 0.005:
-        raise PhotoError("We couldn't find the clothing. Try a clear photo against a plain background.")
+        # A close product crop may put the garment on several frame edges.
+        # Use agreeing corners if the dominant side colors hid the cloth.
+        backdrop = corner_backdrop(lab, edge)
+        if backdrop is not None:
+            distance = np.linalg.norm(lab - backdrop, axis=2)
+            possible = distance > threshold
+            core = centerpiece(possible)
+        if np.count_nonzero(core) < height * width * 0.005:
+            raise PhotoError("We couldn't find the clothing. Try a clear photo against a plain background.")
 
     initial = np.where(possible, cv2.GC_PR_FGD, cv2.GC_PR_BGD).astype(np.uint8)
     if face is None and not worn:
@@ -211,7 +234,7 @@ def grabcut_mask(rgb: np.ndarray, face: Face | None, worn: bool) -> np.ndarray:
 def skin_mask(rgb: np.ndarray) -> np.ndarray:
     _, cr, cb = cv2.split(cv2.cvtColor(rgb, cv2.COLOR_RGB2YCrCb))
     _, saturation, value = cv2.split(cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV))
-    return (cr > 139) & (cb < 124) & (saturation > 40) & (value > 48)
+    return (cr > 139) & (cr < 181) & (cb >= 75) & (cb < 124) & (saturation > 40) & (value > 48)
 
 
 def has_wearer_neck(rgb: np.ndarray) -> bool:
@@ -254,7 +277,11 @@ def classify(rgb: np.ndarray, foreground: np.ndarray, worn: bool) -> tuple[str, 
     central = slice(2 * width // 5, max(2 * width // 5 + 1, 3 * width // 5))
     min_leg_width = max(1, width // 12)
     gaps = ~lower & (left_count >= min_leg_width) & (right_count >= min_leg_width)
-    has_legs = bool(gaps[:, central].mean(axis=0).max() > 0.38)
+    middle = slice(width * 45 // 100, max(width * 45 // 100 + 1, width * 55 // 100))
+    # A long jacket can have two sleeve gaps, but its lower center is the
+    # jacket body. Pants separate through the middle of the lower silhouette.
+    center_coverage = shape[height * 3 // 4:, middle].mean()
+    has_legs = bool(gaps[:, central].mean(axis=0).max() > 0.38 and center_coverage < 0.48)
     if worn:
         photo_type = "worn"
     else:
@@ -286,14 +313,38 @@ def classify(rgb: np.ndarray, foreground: np.ndarray, worn: bool) -> tuple[str, 
     return garment, photo_type, "shirt"
 
 
+def retain_interior_print(mask: np.ndarray) -> np.ndarray:
+    """Keep letter and graphic pixels enclosed by fabric, away from the neck."""
+    foreground = mask > 127
+    ys, xs = np.nonzero(foreground)
+    if not len(ys):
+        return mask
+    left, right = xs.min(), xs.max()
+    top, bottom = ys.min(), ys.max()
+    height, width = bottom - top + 1, right - left + 1
+    max_area = len(xs) * 0.16
+    count, labels, stats, _ = cv2.connectedComponentsWithStats((~foreground).astype(np.uint8), connectivity=4)
+    filled = mask.copy()
+    for label in range(1, count):
+        x, y, w, h, area = stats[label]
+        if (x > left + width * 0.06 and x + w < right - width * 0.06
+                and y > top + height * 0.14 and y + h < bottom - height * 0.08 and area < max_area):
+            filled[labels == label] = 255
+    return filled
+
+
 def prepare_cutout(
     photo: Image.Image, rgb: np.ndarray, face: Face | None, mode: str,
+    *, isnet_mask: np.ndarray | None = None,
 ) -> tuple[bytes, dict[str, str]]:
     worn = face is not None or has_wearer_neck(rgb)
     alpha = np.asarray(photo.getchannel("A"))
     if np.count_nonzero(alpha < 128) > alpha.size * 0.015:
         method = "existing_alpha"
         mask = alpha
+    elif isnet_mask is not None:
+        method = "isnet"
+        mask = isnet_mask
     elif (model := model_mask(photo, mode)) is not None:
         method = "rembg"
         mask = model
@@ -339,6 +390,8 @@ def prepare_cutout(
     if method == "rembg" and mode == "pants" and suggested_mode != "pants":
         garment = "pants"  # The model's lower-clothing class supplied the mask.
     selected = suggested_mode if mode == "auto" else mode
+    if method == "grabcut" and not worn and selected in ("shirt", "t-shirt"):
+        mask = retain_interior_print(mask)
 
     if mask.shape != alpha.shape:
         mask = cv2.resize(mask, photo.size, interpolation=cv2.INTER_LINEAR)

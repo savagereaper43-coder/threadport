@@ -3,6 +3,7 @@ import { Image as CanvasImage, Layer, Stage } from 'react-konva'
 import { usePhotoUrl } from './PhotoUpload'
 import { downloadResult, imagePixels, palette, useTemplateImage } from './resultImage'
 import { CatalogChecklist, FixPanel, Mannequins } from './ResultTools'
+import { GraphicsReview, ResultExtras } from './extras/ResultExtras'
 import { useResultEdits } from './useResultEdits'
 import type { Mode, PhotoSelection, PlacedTemplate, ProcessResult } from './photos'
 import { regionLabel, templates } from './template'
@@ -98,13 +99,15 @@ function GeneratedTemplate({ template, image, showRegions }: {
   )
 }
 
-export default function TemplateResult({ original, selection, mode, result, onBack, openStudio }: {
+export default function TemplateResult({ original, selection, mode, result, onBack, openStudio, imported = false, backLabel = "Back to upload" }: {
   original: File
   selection: PhotoSelection
   mode: Mode
   result: ProcessResult
-  onBack: () => void
+  onBack: (png: string) => void
   openStudio: (project: Project) => void
+  imported?: boolean
+  backLabel?: string
 }) {
   const source = usePhotoUrl(original)
   const heading = useRef<HTMLHeadingElement>(null)
@@ -114,14 +117,14 @@ export default function TemplateResult({ original, selection, mode, result, onBa
   const [studioError, setStudioError] = useState('')
   const tools = useResultEdits(result, selection, mode)
   const { photos, template, png } = tools
-  const baseImage = useTemplateImage(template.png)
+  const baseImage = useTemplateImage(tools.base)
   const display = useTemplateImage(png)
   const displayPixels = useMemo(() => display.image && imagePixels(display.image), [display.image])
   const baseColors = useMemo(() => palette(baseImage.image && imagePixels(baseImage.image)), [baseImage.image])
   const displayColors = useMemo(() => palette(displayPixels), [displayPixels])
   const { label, width, height } = templates[template.mode]
   const cutout = photos[selected]
-  const photoType = photoTypes[(cutout ?? photos[0]).photo_type]
+  const photoType = photoTypes[(cutout ?? photos[0])?.photo_type ?? ""]
   const firstAngle = photos.findIndex(({ role }) => role === 'angles')
   const settled = !tools.placing && !tools.editing && display.ready
 
@@ -151,13 +154,13 @@ export default function TemplateResult({ original, selection, mode, result, onBa
       </div>
       <div className="result-grid">
         <section className="panel result-source" aria-labelledby="source-title">
-          <div className="panel-header"><h2 id="source-title">Your photo</h2></div>
+          <div className="panel-header"><h2 id="source-title">{imported ? "Original template" : "Your photo"}</h2></div>
           <div className={cutout ? 'result-photo cutout-image' : 'result-photo'}>
             {cutout ? (
               <img src={`data:image/png;base64,${cutout.png}`} alt="Clothing with the background removed" />
-            ) : source && <img src={source} alt="Original clothing photo" />}
+            ) : source && <img src={source} alt={imported ? "Original Roblox template" : "Original clothing photo"} />}
           </div>
-          <label className="source-selector">
+          {!imported && <label className="source-selector">
             Photo preview
             <select value={selected} onChange={(event) => setSelected(Number(event.target.value))}>
               <option value={-1}>Original photo</option>
@@ -167,8 +170,8 @@ export default function TemplateResult({ original, selection, mode, result, onBa
                 </option>
               ))}
             </select>
-          </label>
-          <p className="source-type">Photo type guess: {photoType}</p>
+          </label>}
+          {!imported && <p className="source-type">Photo type guess: {photoType}</p>}
         </section>
         <div className="result-center">
           <section className="panel preview" aria-labelledby="placed-title">
@@ -183,29 +186,32 @@ export default function TemplateResult({ original, selection, mode, result, onBa
               <GeneratedTemplate template={template} image={display.image} showRegions={showRegions} />
               {display.failed && <p role="alert">The template couldn’t open. Re-run auto placement to try again.</p>}
               <div className="preview-controls">
-                <span className="match-score" title="Estimated from automatic placement">
+                {!imported && <span className="match-score" title="Estimated from automatic placement">
                   Estimated match {template.quality.score}%
-                </span>
+                </span>}
                 <label className="preview-region-toggle">
                   <input type="checkbox" checked={showRegions} onChange={(event) => setShowRegions(event.target.checked)} />
                   Show regions
                 </label>
               </div>
-              {showRegions && <p className="region-quality">Amber marks a region to check. Point to it or use Tab to read its estimate.</p>}
+              {showRegions && !imported && <p className="region-quality">Amber marks a region to check. Point to it or use Tab to read its estimate.</p>}
             </div>
             {display.image && <Mannequins image={display.image} mode={template.mode} />}
           </section>
           {display.ready && displayPixels && (
             <CatalogChecklist png={png} pixels={displayPixels} template={template} sleeves={tools.fixes.sleeves} colors={displayColors} />
           )}
+          <GraphicsReview png={png} mode={template.mode} ready={settled} useArtwork={tools.replaceArtwork} />
         </div>
         <div className="result-actions">
-          <FixPanel tools={tools} palette={baseColors} ready={settled}
+          <FixPanel tools={tools} palette={baseColors} ready={settled} canPlace={!imported}
             download={() => downloadResult(png, `threadport-${template.mode}.png`)} />
           <button className="secondary-button edit-in-studio" type="button" disabled={!settled || openingStudio}
             onClick={() => { void editInStudio() }}>{openingStudio ? 'Opening Studio…' : 'Edit in Studio'}</button>
           {studioError && <p className="result-note" role="alert">{studioError}</p>}
-          {template.mode !== 't-shirt' && (
+          <ResultExtras png={png} mode={template.mode} original={original} imported={imported} ready={settled}
+            fabricColor={displayColors[0]} useArtwork={tools.replaceArtwork} openStudio={openStudio} />
+          {!imported && template.mode !== 't-shirt' && (
             <p className="result-note">
               {tools.fixes.plain_back || tools.fixes.back_version
                 ? 'The torso back uses fabric from the sides.'
@@ -219,7 +225,7 @@ export default function TemplateResult({ original, selection, mode, result, onBa
               {tools.useAlternate ? 'Show recommended version' : 'Try another version'}
             </button>
           )}
-          <button className="text-button" type="button" onClick={onBack}>Back to upload</button>
+          <button className="text-button" type="button" onClick={() => onBack(png)}>{backLabel}</button>
         </div>
       </div>
     </div>

@@ -39,6 +39,11 @@ The Vite development server forwards `/api` to port 8000. To use a different bac
 - In **Edit in Studio**, each populated face of the current Auto Bash result opens as a separate layer. The original photos and their cutouts are available in the tray. The Auto Bash core produces a rendered template, so its internal clone strokes open as part of their respective face.
 - In Studio's **Photo tray**, add photos to remove their backgrounds. Click the cutout or use Lasso to select a piece. Drag a piece to a face to fit it, or select a region and use the **Regions** panel to place or wrap it. **Assets** provides fabric, garment details, a pattern tiler, and shading. Region guides and seam previews help line up adjacent faces.
 - Use **Avatar preview** to check the front and back. **Download PNG** exports only the artwork at 585 × 559 for shirts and pants or 512 × 512 for T-shirt graphics. Guides stay on screen. The **Catalog checklist** uses the same image checks as Auto Bash.
+- **Batch mode** queues one photo per garment. Set the garment type for each item, pause or retry processing, then open any ready result. Edits saved with **Back to batch** carry into its individual PNG and the batch ZIP. The queue stays in the current Auto Bash session.
+- Use **Restyle an existing Roblox template** to open a 585 × 559 Classic PNG or a 512 × 512 square graphic. Choose a style in Quick-Fix. **Build from a starter base** works directly from a garment photo or fabric close-up, even if automatic placement is unsuitable.
+- On the Result screen, **Make matching pants** or **Make matching shirt** samples the current fabric away from flagged artwork to style a complementary garment. **Colorways** previews six choices and lets you add a custom color. **Starter bases** applies sampled fabric to a hoodie, jersey, jeans, or joggers.
+- **Export set (ZIP)** includes the current PNG and the matching item, starter, and colorways prepared in that Result session. **Before/after image** saves a comparison of the source and the current template.
+- The **Logo and text check** highlights possible high-contrast artwork on the front or back. You can remove it or replace it with an original PNG. The check uses image contrast and does not identify brands or read text. The **Help center** includes photo examples and export tips.
 
 For the cleanest placement, photograph one whole garment straight-on against a plain background and spread the sleeves or legs so their edges are visible. Worn shirts are isolated on a neutral background before running the supplied core. Worn photos can still lose sleeve patterns or parts of a graphic.
 
@@ -69,6 +74,8 @@ The first Classic Shirt request downloads and verifies the core engine's ISNet w
 
 `POST /cutout` accepts a single multipart `front` photo and returns its transparent PNG and classification. Studio uses it to cut photos without running template placement.
 
+`POST /check-graphics` accepts JSON with the base64 template `png` and its `mode`. It returns candidate rectangles with template coordinates and the front or back face.
+
 `POST /quick-fix` accepts JSON with the original base64 template `png`, its `mode`, and a `fixes` object. It returns the adjusted base64 `png`. The Result screen sends its full set of edits each time so that repeated adjustments do not accumulate compression or color changes.
 
 ## Run the tests
@@ -82,7 +89,7 @@ U2NET_HOME="$PWD/.threadport-models" npm test
 npm run build
 ```
 
-With Chromium already installed, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to its path when running `npm test`. Playwright starts its own frontend on port 4173 and API on port 8001. The backend tests cover cutouts, placement, and Quick-Fix edits. Browser tests cover uploads, cancellation, both avatar views, Quick-Fix, catalog copy buttons, PNG downloads, Studio painting and masks, IndexedDB reload, photo cutting and wrapping, and the Auto Bash handoff.
+With Chromium already installed, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to its path when running `npm test`. Playwright starts its own frontend on port 4173 and API on port 8001. The backend tests cover cutouts, placement, and Quick-Fix edits. Browser tests cover uploads, cancellation, both avatar views, Quick-Fix, catalog copy buttons, PNG downloads, Studio painting and masks, IndexedDB reload, photo cutting and wrapping, the Auto Bash handoff, batch review, colorways, matching sets, and downloadable ZIPs.
 
 Rebuild the review PNGs through the same placement pipeline as Auto Bash.
 
@@ -94,4 +101,4 @@ The review command saves the original template PNGs and enlarged checkerboard co
 
 ## Next
 
-Stage 7 adds matching sets, batch mode, colorway tools, and more export options. Review on the wider sample set is still open, with worn-shirt patterns and seams between repeated patches as the main remaining issues.
+Stage 8 covers the wider sample review and final polish. Worn-shirt patterns and seams between repeated patches remain open.

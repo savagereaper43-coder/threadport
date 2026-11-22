@@ -37,15 +37,19 @@ class Fixes(BaseModel):
     saturation: Adjustment = 0
     color: ColorSwap | None = None
     remove_logo: bool = False
+    logo_face: Literal["front", "back"] = "front"
     plain_back: bool = False
     back_version: Annotated[int, Field(ge=0, le=1000)] = 0
     sleeves: Literal["auto", "short", "long", "none"] = "auto"
     style: Literal["realistic", "clean", "cartoon", "vintage", "grunge"] = "realistic"
 
 
-class FixRequest(BaseModel):
+class TemplateRequest(BaseModel):
     png: Annotated[str, Field(max_length=MAX_EDIT_BYTES)]
     mode: Literal["shirt", "pants", "t-shirt"]
+
+
+class FixRequest(TemplateRequest):
     fixes: Fixes
 
 
@@ -165,7 +169,7 @@ def adjust_tone(image: np.ndarray, fixes: Fixes) -> None:
     image[..., :3] = np.where(coverage[..., None] > 0, np.rint(np.clip(rgb, 0, 255)), 0)
 
 
-def edit_png(job: FixRequest) -> str:
+def decode_template(job: TemplateRequest) -> np.ndarray:
     dimensions = TSHIRT_SIZE if job.mode == "t-shirt" else CLASSIC_SIZE
     try:
         data = b64decode(job.png, validate=True)
@@ -175,8 +179,39 @@ def edit_png(job: FixRequest) -> str:
             image = np.array(source.convert("RGBA"))
     except (Base64Error, UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as exc:
         raise HTTPException(422, "Upload an Auto Bash PNG at the correct size.") from exc
+    return image
+
+
+def find_graphics(job: TemplateRequest) -> list[dict]:
+    image = decode_template(job)
+    faces = ("front",) if job.mode == "t-shirt" else ("front", "back")
+    matches = []
+    for side in faces:
+        face = image if job.mode == "t-shirt" else face_view(image, "torso", side)
+        fabric = face[..., 3] > 240
+        coverage = int(fabric.sum())
+        if coverage < 200:
+            continue
+        mask = graphic_mask(np.ascontiguousarray(face[..., :3]), fabric)
+        count, _, stats, _ = cv2.connectedComponentsWithStats(mask.astype(np.uint8))
+        minimum = max(32, coverage // 300)
+        candidates = stats[1:count]
+        candidates = candidates[(candidates[:, cv2.CC_STAT_AREA] >= minimum)
+                                & (candidates[:, cv2.CC_STAT_AREA] <= coverage * 0.42)]
+        if not len(candidates):
+            continue
+        ox, oy = (0, 0) if job.mode == "t-shirt" else FACES["torso", side][:2]
+        x, y = candidates[:, :2].min(axis=0)
+        right, bottom = (candidates[:, :2] + candidates[:, 2:4]).max(axis=0)
+        matches.append({"side": side, "x": int(x) + ox, "y": int(y) + oy,
+                        "w": int(right - x), "h": int(bottom - y)})
+    return matches
+
+
+def edit_png(job: FixRequest) -> str:
+    image = decode_template(job)
     if job.fixes.remove_logo:
-        remove_graphic(image if job.mode == "t-shirt" else face_view(image, "torso", "front"))
+        remove_graphic(image if job.mode == "t-shirt" else face_view(image, "torso", job.fixes.logo_face))
     if job.mode != "t-shirt" and (job.fixes.plain_back or job.fixes.back_version):
         tile_back(image, job.fixes.back_version, job.fixes.plain_back)
     if job.mode == "shirt":
@@ -192,15 +227,25 @@ def edit_png(job: FixRequest) -> str:
     return b64encode(out.getvalue()).decode("ascii")
 
 
-@router.post("/quick-fix")
-async def quick_fix(request: Request):
+async def read_template_request(request: Request, model: type[TemplateRequest]):
     payload = bytearray()
     async for chunk in request.stream():
         if len(payload) + len(chunk) > MAX_EDIT_BYTES:
             raise HTTPException(413, "This template is too large to edit.")
         payload.extend(chunk)
     try:
-        job = FixRequest.model_validate_json(payload)
+        return model.model_validate_json(payload)
     except ValidationError as exc:
         raise HTTPException(422, "Choose supported Quick-Fix settings and try again.") from exc
+
+
+@router.post("/quick-fix")
+async def quick_fix(request: Request):
+    job = await read_template_request(request, FixRequest)
     return {"png": await run_in_threadpool(edit_png, job)}
+
+
+@router.post("/check-graphics")
+async def check_graphics(request: Request):
+    job = await read_template_request(request, TemplateRequest)
+    return {"matches": await run_in_threadpool(find_graphics, job)}

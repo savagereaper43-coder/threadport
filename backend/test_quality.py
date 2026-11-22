@@ -11,6 +11,7 @@ from backend.photos import prepare_cutout
 from backend.placement import CLASSIC_SIZE, FACES
 from backend.processing import inspect
 from backend.quality import blend_seams, face_view, fill_unseen, finish_images, inspect_quality
+from backend.shirt_wrap import continue_fabric
 from backend.worn_shirts import recover_worn_template
 
 SAMPLES = Path(__file__).resolve().parents[1] / "samples"
@@ -38,6 +39,44 @@ class QualityTests(unittest.TestCase):
         seed[:25, :31] = source[:25, :31]
         aligned = pattern_fill(source, seed.shape[:2], 0, seed)
         np.testing.assert_array_equal(aligned[:25, :31], seed[:25, :31])
+
+    def test_pattern_wrap_keeps_the_front_opacity_and_source_pixel_scale(self):
+        rows, columns = np.mgrid[:128, :152]
+        photo = np.full((128, 152, 4), 255, dtype=np.uint8)
+        photo[..., :3] = np.where(((rows % 5 < 2) ^ (columns % 6 < 3))[..., None], 49, 192)
+        photo[34:84, 69:84, :3] = (200, 80, 65)
+        template = sheet()
+        front = face_view(template, "torso", "front")
+        front[:] = photo[:, 12:140]
+        for face in ("left", "back", "right"):
+            face_view(template, "torso", face)[:] = front[:, :1]
+        face_view(template, "torso", "up")[24:40, 48:80, 3] = 0
+        before = template.copy()
+
+        continue_fabric(template, photo, np.ones(photo.shape[:2], dtype=bool),
+                        left=12, top=0, scale=1., shading=0.)
+
+        np.testing.assert_array_equal(front, face_view(before, "torso", "front"))
+        np.testing.assert_array_equal(template[..., 3], before[..., 3])
+        back = face_view(template, "torso", "back")
+        self.assertEqual(set(np.unique(back[..., 0])), {49, 192})
+        np.testing.assert_array_equal(back[36:100, 30:60], back[41:105, 30:60])
+        self.assertEqual(float(np.abs(np.diff(back[40, :, 0].astype(int))).max()), 143.0)
+        self.assertEqual(template[0, 0, 3], 0)
+
+    def test_localized_print_does_not_trigger_pattern_wrap(self):
+        photo = np.full((128, 128, 4), 255, dtype=np.uint8)
+        photo[..., :3] = (20, 34, 90)
+        pattern = np.indices((42, 46)).sum(axis=0) % 2
+        photo[30:72, 41:87, :3] = 40 + 200 * pattern[..., None]
+        template = sheet()
+        face_view(template, "torso", "front")[:] = photo
+        before = template.copy()
+
+        continue_fabric(template, photo, np.ones(photo.shape[:2], dtype=bool),
+                        left=0, top=0, scale=1., shading=0.5)
+
+        np.testing.assert_array_equal(template, before)
 
     def test_edge_blending_preserves_alpha_gutters_and_face_interiors(self):
         image = sheet()

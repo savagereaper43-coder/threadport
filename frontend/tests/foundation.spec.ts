@@ -1,9 +1,10 @@
 import { readFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
 
-test('switches modes, edits the Studio title and opens the projects placeholder', async ({ page }) => {
+test('switches modes, edits the Studio title and opens saved projects', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Auto Bash', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Turn any clothes photo into Roblox clothing' })).toBeVisible()
+  await page.getByRole('button', { name: 'Start Auto Bash' }).click()
   await expect(page.getByText('Upload', { exact: true })).toHaveAttribute('aria-current', 'step')
   await page.getByRole('button', { name: 'Studio', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Studio', exact: true })).toHaveAttribute('aria-pressed', 'true')
@@ -32,7 +33,8 @@ test('the hidden guides use the avatar’s right and left in both classic layout
   await expect(rightArm).toBeVisible()
   await expect(leftArm).toBeVisible()
   expect((await rightArm.boundingBox())!.x).toBeLessThan((await leftArm.boundingBox())!.x)
-  await page.getByText('Pants', { exact: true }).click()
+  await page.getByRole('combobox', { name: 'New template' }).selectOption('pants')
+  await toggle.check()
   const rightLeg = page.getByTitle('Right leg front')
   const leftLeg = page.getByTitle('Left leg front')
   await expect(page.getByTitle('Waist front')).toBeVisible()
@@ -49,7 +51,7 @@ for (const template of [
   test(`downloads a transparent ${template.label} PNG at its native dimensions with guides on`, async ({ page }) => {
     await page.goto('/')
   await page.getByRole('button', { name: 'Studio', exact: true }).click()
-    await page.getByText(template.label, { exact: true }).click()
+    await page.getByRole('combobox', { name: 'New template' }).selectOption(template.filename)
     await page.getByRole('checkbox', { name: 'Show regions' }).check()
     const downloadEvent = page.waitForEvent('download')
     await page.getByRole('button', { name: 'Download PNG' }).click()

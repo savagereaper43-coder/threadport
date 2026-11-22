@@ -6,6 +6,9 @@ import { CatalogChecklist, FixPanel, Mannequins } from './ResultTools'
 import { useResultEdits } from './useResultEdits'
 import type { Mode, PhotoSelection, PlacedTemplate, ProcessResult } from './photos'
 import { regionLabel, templates } from './template'
+import { id } from './studio/model'
+import type { Project } from './studio/model'
+import { fileUrl, importTemplate, pngUrl } from './studio/raster'
 
 const photoTypes: Record<string, string> = {
   flat_lay: 'Laid flat',
@@ -95,17 +98,20 @@ function GeneratedTemplate({ template, image, showRegions }: {
   )
 }
 
-export default function TemplateResult({ original, selection, mode, result, onBack }: {
+export default function TemplateResult({ original, selection, mode, result, onBack, openStudio }: {
   original: File
   selection: PhotoSelection
   mode: Mode
   result: ProcessResult
   onBack: () => void
+  openStudio: (project: Project) => void
 }) {
   const source = usePhotoUrl(original)
   const heading = useRef<HTMLHeadingElement>(null)
   const [selected, setSelected] = useState(-1)
   const [showRegions, setShowRegions] = useState(false)
+  const [openingStudio, setOpeningStudio] = useState(false)
+  const [studioError, setStudioError] = useState('')
   const tools = useResultEdits(result, selection, mode)
   const { photos, template, png } = tools
   const baseImage = useTemplateImage(template.png)
@@ -120,6 +126,23 @@ export default function TemplateResult({ original, selection, mode, result, onBa
   const settled = !tools.placing && !tools.editing && display.ready
 
   useEffect(() => { heading.current?.focus() }, [])
+
+  async function editInStudio() {
+    setOpeningStudio(true)
+    setStudioError('')
+    try {
+      const sourceFiles = [selection.front, selection.back, ...selection.angles].filter((file): file is File => !!file)
+      const tray = await Promise.all(photos.map(async (photo, i) => ({
+        id: id(), name: sourceFiles[i]?.name ?? `Photo ${i + 1}`,
+        src: sourceFiles[i] ? await fileUrl(sourceFiles[i]) : pngUrl(photo.png), cutout: pngUrl(photo.png),
+      })))
+      const project = await importTemplate(pngUrl(png), template.mode, `Auto Bash ${label}`, tray)
+      openStudio({ ...project, profile: template.profile })
+    } catch {
+      setStudioError('We couldn’t open this result in Studio. Try again.')
+      setOpeningStudio(false)
+    }
+  }
 
   return (
     <div className="result-page">
@@ -179,6 +202,9 @@ export default function TemplateResult({ original, selection, mode, result, onBa
         <div className="result-actions">
           <FixPanel tools={tools} palette={baseColors} ready={settled}
             download={() => downloadResult(png, `threadport-${template.mode}.png`)} />
+          <button className="secondary-button edit-in-studio" type="button" disabled={!settled || openingStudio}
+            onClick={() => { void editInStudio() }}>{openingStudio ? 'Opening Studio…' : 'Edit in Studio'}</button>
+          {studioError && <p className="result-note" role="alert">{studioError}</p>}
           {template.mode !== 't-shirt' && (
             <p className="result-note">
               {tools.fixes.plain_back || tools.fixes.back_version

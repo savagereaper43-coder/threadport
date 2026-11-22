@@ -4,6 +4,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { PhotoUpload, usePhotoUrl } from './PhotoUpload'
 import { processPhotos } from './photos'
 import type { Mode, PhotoSelection, ProcessResult, Progress } from './photos'
+import type { Project } from './studio/model'
 
 const TemplateResult = lazy(() => import('./TemplateResult'))
 
@@ -78,7 +79,7 @@ function Processing({ front, progress, onCancel }: {
 
 export type AutoBashStep = 'Upload' | 'Processing' | 'Result'
 
-export function AutoBash({ onStepChange }: { onStepChange: (step: AutoBashStep) => void }) {
+export function AutoBash({ onStepChange, openStudio }: { onStepChange: (step: AutoBashStep) => void; openStudio: (project: Project) => void }) {
   const [photos, setPhotos] = useState<PhotoSelection>({ front: null, back: null, angles: [] })
   const [mode, setMode] = useState<Mode>('auto')
   const [error, setError] = useState('')
@@ -126,7 +127,7 @@ export function AutoBash({ onStepChange }: { onStepChange: (step: AutoBashStep) 
   if (result && photos.front) {
     return (
       <Suspense fallback={<p role="status">Opening template preview…</p>}>
-        <TemplateResult original={photos.front} selection={photos} mode={mode} result={result} onBack={returnToUpload} />
+        <TemplateResult original={photos.front} selection={photos} mode={mode} result={result} onBack={returnToUpload} openStudio={openStudio} />
       </Suspense>
     )
   }

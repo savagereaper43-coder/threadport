@@ -169,3 +169,20 @@ async def process(request: Request):
         media_type="application/x-ndjson",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/cutout")
+async def cutout(request: Request):
+    """Prepare a source photo for Studio without running template placement."""
+    mode, photos, _ = await read_photos(request)
+    if len(photos) != 1:
+        raise HTTPException(422, "Add one photo to cut out.")
+
+    def prepare():
+        return prepare_cutout(*inspect(photos[0][1]), mode)
+
+    try:
+        png, details = await run_in_threadpool(prepare)
+    except PhotoError as error:
+        raise HTTPException(422, str(error)) from error
+    return {"png": base64.b64encode(png).decode("ascii"), **details}

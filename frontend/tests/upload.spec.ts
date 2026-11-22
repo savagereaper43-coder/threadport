@@ -7,7 +7,7 @@ const pants = fileURLToPath(new URL('../../samples/blue pants test.JPG', import.
 
 test('renders a shirt with its back photo and rerenders it when Quick-Fix shading changes', async ({ page }) => {
   test.setTimeout(60_000)
-  await page.goto('/')
+  await page.goto('/#auto-bash')
   const submit = page.getByRole('button', { name: 'Make my Roblox clothing' })
   await expect(submit).toBeDisabled()
   await expect(page.getByRole('radio', { name: 'Auto' })).toBeChecked()
@@ -62,7 +62,7 @@ test('renders a shirt with its back photo and rerenders it when Quick-Fix shadin
 
 test('supports keyboard dismissal of photo tips, drag-and-drop and clipboard paste', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 })
-  await page.goto('/')
+  await page.goto('/#auto-bash')
   const examples = page.getByRole('button', { name: 'See good vs bad photos' })
   await examples.click()
   const dialog = page.getByRole('dialog', { name: 'Good vs bad photos' })
@@ -92,7 +92,7 @@ test('supports keyboard dismissal of photo tips, drag-and-drop and clipboard pas
 })
 
 test('cancels an in-flight request and returns to the selected upload', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/#auto-bash')
   await page.locator('.drop-zone input[type=file]').setInputFiles(shirt)
   let unblock!: () => void
   const blocked = new Promise<void>((resolve) => { unblock = resolve })
@@ -117,7 +117,7 @@ test('cancels an in-flight request and returns to the selected upload', async ({
 })
 
 test('reports unreadable photos in plain language and leaves the upload ready to retry', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/#auto-bash')
   await page.locator('.drop-zone input[type=file]').setInputFiles({
     name: 'corrupted.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('not an image'),
   })
@@ -170,7 +170,7 @@ test('the live endpoint streams ordered progress and returns the requested templ
 
 test('a single flat-lay photo produces a pants preview on a narrow screen', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 })
-  await page.goto('/')
+  await page.goto('/#auto-bash')
   await page.locator('.drop-zone input[type=file]').setInputFiles(pants)
   await page.getByRole('button', { name: 'Make my Roblox clothing' }).click()
   await expect(page.getByRole('img', { name: 'Generated Pants template' })).toBeVisible()

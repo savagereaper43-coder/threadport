@@ -206,7 +206,7 @@ function describeColor(value?: string): string {
 export function CatalogChecklist({ png, pixels, template, sleeves, colors }: {
   png: string
   pixels: ImageData
-  template: PlacedTemplate
+  template: Pick<PlacedTemplate, 'mode' | 'profile'>
   sleeves: Fixes['sleeves']
   colors: string[]
 }) {

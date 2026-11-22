@@ -7,7 +7,7 @@ const shirt = fileURLToPath(new URL('../../samples/black shirt test.JPG', import
 test('edits a real shirt, previews both sides, copies catalog text and exports the exact edited PNG', async ({ page, context }) => {
   test.setTimeout(60_000)
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-  await page.goto('/')
+  await page.goto('/#auto-bash')
   await page.locator('.drop-zone input[type=file]').setInputFiles(shirt)
   await page.getByRole('button', { name: 'Make my Roblox clothing' }).click()
 
@@ -100,7 +100,7 @@ test('edits a real shirt, previews both sides, copies catalog text and exports t
 })
 
 test('retries a failed edit of a square T-Shirt and exports its 512 px graphic', async ({ page, request }) => {
-  await page.goto('/')
+  await page.goto('/#auto-bash')
   await page.getByRole('radio', { name: 'T-Shirt', exact: true }).check()
   await page.locator('.drop-zone input[type=file]').setInputFiles(shirt)
   await page.getByRole('button', { name: 'Make my Roblox clothing' }).click()

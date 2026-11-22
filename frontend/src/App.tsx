@@ -1,214 +1,151 @@
-import { Download, Folder, Grid2X2, Shirt } from 'lucide-react'
+import { Folder } from 'lucide-react'
 import { motion, useReducedMotion } from 'motion/react'
-import { useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { AutoBash } from './AutoBash'
 import type { AutoBashStep } from './AutoBash'
-import { exportTemplatePng, regionLabel, templates } from './template'
+import { Home, Projects } from './studio/Projects'
+import { deleteProject, id, loadProjects, newProject, saveProject } from './studio/model'
+import type { Project } from './studio/model'
 import type { TemplateKind } from './template'
 
-type View = 'Auto Bash' | 'Studio' | 'My Projects'
-
+const StudioEditor = lazy(() => import('./studio/StudioEditor'))
+const routes = { Home: '', 'Auto Bash': '#auto-bash', Studio: '#studio', 'My Projects': '#projects' }
+type View = keyof typeof routes
 const modes = ['Auto Bash', 'Studio'] as const
 const steps = ['Upload', 'Processing', 'Result']
 
-function TemplateWorkspace() {
-  const [kind, setKind] = useState<TemplateKind>('shirt')
-  const [showRegions, setShowRegions] = useState(false)
-  const [isExporting, setIsExporting] = useState(false)
-  const [exportError, setExportError] = useState(false)
-  const { label, width, height, regions } = templates[kind]
-
-  async function downloadTemplate() {
-    setExportError(false)
-    setIsExporting(true)
-    try {
-      const png = await exportTemplatePng(kind)
-      const url = URL.createObjectURL(png)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `threadport-${kind}-template.png`
-      link.click()
-      window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
-    } catch {
-      setExportError(true)
-    } finally {
-      setIsExporting(false)
-    }
-  }
-
-  return (
-    <div className="workspace">
-      <section className="panel preview" aria-labelledby="preview-title">
-        <div className="panel-header">
-          <h2 id="preview-title">Template preview</h2>
-          <span className="template-size">{width} × {height} px</span>
-        </div>
-        <div className="preview-area">
-          <div
-            className="checkerboard"
-            style={{ aspectRatio: `${width} / ${height}`, maxWidth: width }}
-            aria-label={`Blank ${label} template`}
-            role={showRegions ? 'group' : 'img'}
-          >
-            {showRegions ? (
-              regions.map(({ part, face, x, y, w, h }) => (
-                <div
-                  className="region"
-                  key={`${part}.${face}`}
-                  title={regionLabel(kind, part, face)}
-                  style={{
-                    left: `${(x / width) * 100}%`,
-                    top: `${(y / height) * 100}%`,
-                    width: `${(w / width) * 100}%`,
-                    height: `${(h / height) * 100}%`,
-                  }}
-                >
-                  <span>{regionLabel(kind, part, face)}</span>
-                </div>
-              ))
-            ) : (
-              <div className="blank-preview" aria-hidden="true">
-                <Shirt size={24} strokeWidth={1.5} />
-                <span>Blank template</span>
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-      <section className="panel controls" aria-labelledby="settings-title">
-        <h2 id="settings-title">Template settings</h2>
-        <fieldset>
-          <legend>Clothing type</legend>
-          <div className="type-options">
-            {(['shirt', 'pants', 't-shirt'] as const).map((option) => (
-              <label key={option} className="type-option">
-                <input
-                  type="radio"
-                  name="clothing-type"
-                  value={option}
-                  checked={kind === option}
-                  onChange={() => setKind(option)}
-                />
-                <span>{templates[option].label}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
-        <label className="guide-control">
-          <Grid2X2 size={16} aria-hidden="true" />
-          <span>Show regions</span>
-          <input
-            type="checkbox"
-            checked={showRegions}
-            onChange={(event) => setShowRegions(event.target.checked)}
-          />
-        </label>
-        <div className="export">
-          <p>The PNG is blank and transparent. Region guides stay in the preview.</p>
-          <button
-            className="primary-button"
-            type="button"
-            onClick={downloadTemplate}
-            disabled={isExporting}
-          >
-            <Download size={16} aria-hidden="true" />
-            {isExporting ? 'Preparing PNG…' : 'Download PNG'}
-          </button>
-          {exportError && <p role="alert">The download failed. Try downloading again.</p>}
-        </div>
-      </section>
-    </div>
-  )
+function currentView(): View {
+  return (Object.keys(routes) as View[]).find((key) => routes[key] === window.location.hash) ?? 'Home'
 }
 
 export function App() {
-  const [view, setView] = useState<View>('Auto Bash')
-  const [projectName, setProjectName] = useState('Untitled project')
+  const [view, setView] = useState<View>(currentView)
+  const projects = useRef(new Map<string, Project>())
+  const discarded = useRef(new Set<string>())
+  const [cards, setCards] = useState<Project[]>([])
+  const [draft, setDraft] = useState(newProject)
+  const [active, setActive] = useState('')
   const [step, setStep] = useState<AutoBashStep>('Upload')
+  const [pending, setPending] = useState(0)
+  const [storageError, setStorageError] = useState('')
+  const activeProject = cards.find((project) => project.id === (active || draft.id)) ?? draft
   const reduceMotion = useReducedMotion()
 
-  function switchView(next: View) {
-    if (next === view) return
-    setStep('Upload')
-    setView(next)
+  function refresh() {
+    setCards([...projects.current.values()].sort((a, b) => b.updated - a.updated))
   }
 
-  return (
-    <>
-      <header className="top-bar">
-        <div className="top-bar-inner">
-          <button className="wordmark" type="button" onClick={() => switchView('Auto Bash')}>
-            ThreadPort
-          </button>
-          <div className="top-bar-center">
-            {view === 'Auto Bash' && (
-              <ol className="steps" aria-label="Auto Bash progress">
-                {steps.map((label, index) => (
-                  <li key={label} aria-current={label === step ? 'step' : undefined}>
-                    {index > 0 && <span aria-hidden="true">·</span>}
-                    {label}
-                  </li>
-                ))}
-              </ol>
-            )}
-            {view === 'Studio' && (
-              <input
-                className="project-name"
-                aria-label="Project name"
-                value={projectName}
-                onChange={(event) => setProjectName(event.target.value)}
-                onBlur={() => setProjectName(projectName.trim() || 'Untitled project')}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') event.currentTarget.blur()
-                }}
-              />
-            )}
-          </div>
-          <nav className="top-bar-actions" aria-label="Workspace">
-            <div className="mode-tabs" role="group" aria-label="Mode">
-              {modes.map((mode) => (
-                <button
-                  type="button"
-                  key={mode}
-                  aria-pressed={view === mode}
-                  onClick={() => switchView(mode)}
-                >
-                  {mode}
-                </button>
-              ))}
-            </div>
-            <button
-              className="projects-button"
-              type="button"
-              aria-label="My Projects"
-              aria-pressed={view === 'My Projects'}
-              onClick={() => switchView('My Projects')}
-            >
-              <Folder size={16} aria-hidden="true" />
-              <span>My Projects</span>
-            </button>
-          </nav>
-        </div>
-      </header>
+  useEffect(() => {
+    let mounted = true
+    loadProjects().then((stored) => {
+      if (!mounted) return
+      for (const project of stored) if (!projects.current.has(project.id)) projects.current.set(project.id, project)
+      refresh()
+    }).catch(() => { if (mounted) setStorageError('We couldn’t open browser storage. Projects may be unavailable.') })
+    const navigate = () => { setView(currentView()); setStep('Upload') }
+    window.addEventListener('hashchange', navigate)
+    return () => { mounted = false; window.removeEventListener('hashchange', navigate) }
+  }, [])
 
-      <motion.main
-        key={view}
-        className={view === 'Studio' ? 'studio' : undefined}
-        initial={reduceMotion ? false : { opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: reduceMotion ? 0 : 0.2, ease: 'easeOut' }}
-      >
-        {view === 'Auto Bash' ? <AutoBash onStepChange={setStep} /> : (
-          <>
-            <div className="page-heading">
-              <h1>{view}</h1>
-              {view === 'Studio' && <p>Start with a blank template. Editing tools will come in a later stage.</p>}
-              {view === 'My Projects' && <p>Saved projects will appear here once project saving is available.</p>}
-            </div>
-            {view === 'Studio' && <TemplateWorkspace />}
-          </>
-        )}
-      </motion.main>
-    </>
-  )
+  useEffect(() => { window.scrollTo(0, 0) }, [view])
+
+  function write(project: Project) {
+    if (discarded.current.has(project.id)) return
+    projects.current.set(project.id, project)
+    refresh()
+    setPending((old) => old + 1)
+    void saveProject(project).then(() => setStorageError(''))
+      .catch(() => setStorageError('We couldn’t save this project in browser storage. You can still download its PNG.'))
+      .finally(() => setPending((old) => old - 1))
+  }
+
+  function changeProject(update: (project: Project) => Project) {
+    const current = projects.current.get(activeProject.id) ?? activeProject
+    if (!projects.current.has(current.id) && draft.id !== current.id) return
+    const next = update(current)
+    if (next === current) return
+    const updated = next.thumbnail !== current.thumbnail && next.layers === current.layers ? current.updated : Date.now()
+    write({ ...next, thumbnail: next.layers.length ? next.thumbnail : undefined, updated })
+  }
+
+  function remove(project: Project) {
+    discarded.current.add(project.id)
+    projects.current.delete(project.id)
+    refresh()
+    if (active === project.id || draft.id === project.id) {
+      setActive('')
+      setDraft(newProject())
+    }
+    void deleteProject(project.id).catch(() => {
+      discarded.current.delete(project.id)
+      write(project)
+      setStorageError('We couldn’t delete that project. Try again.')
+    })
+  }
+
+  function navigate(next: View) {
+    if (next === view) return
+    if (next === 'Auto Bash') setStep('Upload')
+    setView(next)
+    window.location.hash = routes[next]
+  }
+
+  function openProject(project: Project) {
+    if (!projects.current.has(project.id)) write(project)
+    setActive(project.id)
+    navigate('Studio')
+  }
+
+  function create(kind: TemplateKind) {
+    const project = newProject(kind)
+    setDraft(project)
+    setActive('')
+    navigate('Studio')
+  }
+
+  function rename(name: string) {
+    if (name !== activeProject.name) changeProject((project) => ({ ...project, name }))
+  }
+
+  return <>
+    <header className="top-bar">
+      <div className="top-bar-inner">
+        <button className="wordmark" type="button" onClick={() => navigate('Home')}>ThreadPort</button>
+        <div className="top-bar-center">
+          {view === 'Auto Bash' && <ol className="steps" aria-label="Auto Bash progress">
+            {steps.map((label, index) => <li key={label} aria-current={label === step ? 'step' : undefined}>
+              {index > 0 && <span aria-hidden="true">·</span>}{label}</li>)}
+          </ol>}
+          {view === 'Studio' && <input className="project-name" aria-label="Project name" value={activeProject.name} maxLength={100}
+            onChange={(event) => rename(event.target.value)}
+            onBlur={() => rename(activeProject.name.trim() || 'Untitled project')}
+            onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }} />}
+        </div>
+        <nav className="top-bar-actions" aria-label="Workspace">
+          <div className="mode-tabs" role="group" aria-label="Mode">
+            {modes.map((mode) => <button type="button" key={mode} aria-pressed={view === mode}
+              onClick={() => navigate(mode)}>{mode}</button>)}
+          </div>
+          <button className="projects-button" type="button" aria-label="My Projects" aria-pressed={view === 'My Projects'}
+            onClick={() => navigate('My Projects')}><Folder size={16} aria-hidden="true" /><span>My Projects</span></button>
+        </nav>
+      </div>
+    </header>
+
+    <motion.main key={view} className={view === 'Studio' ? 'studio' : undefined}
+      initial={reduceMotion ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: reduceMotion ? 0 : .2, ease: 'easeOut' }}>
+      {storageError && <p className="storage-error" role="alert">{storageError}</p>}
+      {view === 'Home' && <Home projects={cards} open={openProject} start={() => navigate('Auto Bash')} studio={() => navigate('Studio')} />}
+      {view === 'Auto Bash' && <AutoBash onStepChange={setStep} openStudio={openProject} />}
+      {view === 'Studio' && <Suspense fallback={<p role="status">Opening Studio…</p>}>
+        <StudioEditor key={activeProject.id} project={activeProject} change={changeProject} openProject={openProject}
+          createProject={create} saving={pending ? 'Saving…' : cards.some((item) => item.id === activeProject.id) && !storageError ? 'Saved' : ''} />
+      </Suspense>}
+      {view === 'My Projects' && <Projects projects={cards} open={openProject}
+        duplicate={(project) => write({ ...project, id: id(), name: `${project.name} copy`, updated: Date.now() })}
+        remove={remove} move={(project, folder) => write({ ...project, folder, updated: Date.now() })}
+        create={() => create('shirt')} />}
+    </motion.main>
+  </>
 }

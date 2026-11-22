@@ -99,15 +99,37 @@ def inspect(data: bytes):
 
 
 def available_cutout(photo, rgb, face, mode):
+    model_enabled = os.getenv("THREADPORT_CORE_MODEL", "1") != "0"
     try:
-        return prepare_cutout(photo, rgb, face, mode)
+        prepared = prepare_cutout(photo, rgb, face, mode)
     except PhotoError as initial_error:
-        if os.getenv("THREADPORT_CORE_MODEL", "1") == "0":
+        if not model_enabled:
             raise
         try:
             return prepare_cutout(photo, rgb, face, mode, isnet_mask=isnet_cutout(rgb))
         except Exception:
             raise initial_error from None
+    png, details = prepared
+    if (not model_enabled or face is not None or details["photo_type"] != "worn"
+            or details["method"] != "grabcut" or details["mode"] != "shirt"
+            or details["garment_type"] != "top"):
+        return prepared
+
+    # The skin detector can mistake warm textiles for skin. A second cutout can restore
+    # missing panels when it preserves the original garment and adds body fabric.
+    try:
+        candidate = prepare_cutout(photo, rgb, face, mode, isnet_mask=isnet_cutout(rgb))
+        if candidate[1]["garment_type"] != "top" or candidate[1]["mode"] != "shirt":
+            return prepared
+        with Image.open(BytesIO(png)) as first, Image.open(BytesIO(candidate[0])) as second:
+            size = (rgb.shape[1], rgb.shape[0])
+            old = np.asarray(first.getchannel("A").resize(size, Image.Resampling.NEAREST)) > 200
+            new = np.asarray(second.getchannel("A").resize(size, Image.Resampling.NEAREST)) > 200
+        if new.sum() >= old.sum() * 1.42 and (old & new).sum() >= old.sum() * 0.89:
+            return candidate
+    except Exception:
+        logger.debug("The follow-up cutout was unavailable.", exc_info=True)
+    return prepared
 
 
 def classical_shirt(source_photos, shading: float) -> tuple[bytes, str, bool]:
@@ -122,7 +144,7 @@ def classical_shirt(source_photos, shading: float) -> tuple[bytes, str, bool]:
         except PhotoError:
             pass
     canvas = rgba(place_template("shirt", front, back))
-    if back is None:
+    if back is None and front.profile != "sleeveless":
         torso = face_view(canvas, "torso", "front")
         fabric = torso[..., 3] == 255
         rgb = np.ascontiguousarray(torso[..., :3])
@@ -179,7 +201,8 @@ async def process_events(
                 try:
                     worn_tee = photo_type == "worn" and details["garment_type"] == "t_shirt"
                     template, profile = await run_in_threadpool(
-                        make_core_shirt, front, back, shading, front_png if worn_tee else None
+                        make_core_shirt, front, back, shading, front_png if worn_tee else None,
+                        fit_product=photo_type != "worn",
                     )
                     has_back = back is not None
                 except Exception as error:

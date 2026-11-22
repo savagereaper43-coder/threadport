@@ -99,7 +99,7 @@ class PlacementTests(unittest.TestCase):
             matrices.append(transform)
             return original(photo, transform, size, **options)
 
-        for name in ("black shirt test.JPG", "blue pants test.JPG"):
+        for name in ("black shirt test.JPG", "blue pants test.JPG", "golden/denim-skirt.jpg"):
             cutout, details = prepare_cutout(*inspect((SAMPLES / name).read_bytes()), "auto")
             mode, kind = details["mode"], details["garment_type"]
             matrices.clear()
@@ -126,6 +126,25 @@ class PlacementTests(unittest.TestCase):
             left = np.asarray(face(template, part, "left"), dtype=int)
             self.assertLess(np.abs(front[:, 0, :3] - right[:, -1, :3]).mean(), 5)
             self.assertLess(np.abs(front[:, -1, :3] - left[:, 0, :3]).mean(), 5)
+
+    def test_fitted_skirt_uses_one_front_panel_and_covers_only_the_upper_legs(self):
+        photo = (SAMPLES / "golden" / "denim-skirt.jpg").read_bytes()
+        cutout, details = prepare_cutout(*inspect(photo), "auto")
+        self.assertEqual((details["garment_type"], details["mode"]), ("skirt", "pants"))
+        parts = segment_parts(cutout, details["mode"], details["garment_type"])
+        self.assertEqual(parts.profile, "skirt")
+        template = read_png(place_template("pants", parts))
+        length = round(128 * RULES["profiles"]["skirt"]["limb_height"])
+        for part in ("rightLimb", "leftLimb"):
+            for side in ("front", "left", "right", "back"):
+                alpha = np.asarray(face(template, part, side))[..., 3]
+                self.assertTrue((alpha[:length] == 255).all(), (part, side))
+                self.assertFalse(alpha[length:].any(), (part, side))
+            self.assertIsNone(face(template, part, "down").getbbox())
+        right = np.asarray(face(template, "rightLimb", "front"), dtype=np.int16)
+        left = np.asarray(face(template, "leftLimb", "front"), dtype=np.int16)
+        difference = np.abs(right[15:55, -1, :3] - left[15:55, 0, :3]).mean()
+        self.assertLess(difference, 20)
 
     def test_back_view_preserves_avatar_side_and_is_only_used_when_supplied(self):
         photo = Image.new("RGBA", (300, 360))

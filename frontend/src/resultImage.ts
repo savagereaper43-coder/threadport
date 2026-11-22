@@ -68,13 +68,14 @@ export function inspectTemplate(png: string, pixels: ImageData, mode: TemplateKi
   const hasAlpha = isPng && (data[25] === 4 || data[25] === 6)
   const allowed = new Uint8Array(pixels.width * pixels.height)
   const emptyRegions: string[] = []
+  const noSleeves = mode === 'shirt' && (sleeves === 'none' || (sleeves === 'auto' && profile === 'sleeveless'))
+  const uncoveredCuffs = mode === 'pants' ? profile === 'shorts' || profile === 'skirt'
+    : sleeves === 'short' || (sleeves === 'auto' && profile === 't_shirt')
   let visible = false
   if (exactSize) {
     for (const region of regions) {
       const limb = region.part !== 'torso'
-      const uncovered = limb && ((mode === 'shirt' && sleeves === 'none')
-        || (region.face === 'down' && (mode === 'pants' ? profile === 'shorts'
-          : sleeves === 'short' || (sleeves === 'auto' && profile === 't_shirt'))))
+      const uncovered = limb && (noSleeves || (region.face === 'down' && uncoveredCuffs))
       let occupied = false
       for (let y = region.y; y < region.y + region.h; y++) {
         const start = y * width + region.x

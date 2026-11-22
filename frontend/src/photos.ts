@@ -36,7 +36,7 @@ type TemplateVariant = {
 export type PlacedTemplate = TemplateVariant & {
   alternate?: TemplateVariant
   mode: TemplateKind
-  profile: 't_shirt' | 'long_sleeve' | 'hoodie' | 'pants' | 'shorts'
+  profile: 't_shirt' | 'long_sleeve' | 'sleeveless' | 'hoodie' | 'pants' | 'shorts' | 'skirt'
   has_back: boolean
 }
 
